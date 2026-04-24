@@ -1,0 +1,306 @@
+:root {
+  --bg: #fafaf7;
+  --fg: #1a1a1a;
+  --muted: #6b6b6b;
+  --card-bg: #ffffff;
+  --card-border: #e5e5e0;
+  --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  --accent: #d64545;
+  --accent-ink: #ffffff;
+  --kbd-bg: #eceae3;
+  --kbd-border: #cfccc2;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #151514;
+    --fg: #f2f0ea;
+    --muted: #9a9a94;
+    --card-bg: #1f1f1e;
+    --card-border: #35342f;
+    --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+    --accent: #e86a6a;
+    --kbd-bg: #2a2927;
+    --kbd-border: #3d3b37;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo",
+               "Malgun Gothic", "Noto Sans KR", sans-serif;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* ---------- Top bar ---------- */
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.controls-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.deck-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+select {
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  min-width: 220px;
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle input { accent-color: var(--accent); }
+
+button.mini {
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+button.mini:hover { border-color: var(--accent); }
+
+/* ---------- Mode segmented control ---------- */
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  background: var(--card-bg);
+  padding: 2px;
+  gap: 2px;
+}
+
+.seg-btn {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  padding: 5px 14px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.seg-btn[aria-checked="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.seg-btn:not([aria-checked="true"]):hover { color: var(--fg); }
+
+/* ---------- Stage / card ---------- */
+
+.stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 24px;
+}
+
+.counter {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.card {
+  all: unset;
+  width: min(520px, 90vw);
+  aspect-ratio: 4 / 3;
+  perspective: 1200px;
+  cursor: pointer;
+  display: block;
+}
+
+.card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.5s cubic-bezier(.2, .8, .2, 1);
+  transform-style: preserve-3d;
+}
+
+.card.flipped .card-inner { transform: rotateY(180deg); }
+
+/* Learn mode: no flipping, show everything on the front face. */
+.learn-reveal { display: none; }
+.card[data-mode="learn"] .card-inner { transform: none !important; transition: none; }
+.card[data-mode="learn"] .face-back { display: none; }
+.card[data-mode="learn"] .learn-reveal { display: block; }
+.card[data-mode="learn"] .front-text { font-size: clamp(56px, 14vw, 140px); }
+.card[data-mode="learn"] .face-front { gap: 4px; }
+.card[data-mode="learn"] .face-front .back-text {
+  font-size: clamp(22px, 4.5vw, 36px);
+  color: var(--muted);
+  font-weight: 500;
+  margin-top: 8px;
+}
+.card[data-mode="learn"] .face-front .extra-text { margin-top: 2px; }
+
+.face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 20px;
+  box-shadow: var(--card-shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.face-back { transform: rotateY(180deg); }
+
+.front-text {
+  font-size: clamp(72px, 18vw, 180px);
+  line-height: 1;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+
+.back-text {
+  font-size: clamp(40px, 9vw, 88px);
+  line-height: 1.1;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.extra-text {
+  margin-top: 12px;
+  font-size: clamp(14px, 2.5vw, 20px);
+  color: var(--muted);
+}
+
+/* ---------- Bottom controls ---------- */
+
+.controls-bottom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.nav, .play {
+  font: inherit;
+  background: var(--card-bg);
+  color: var(--fg);
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav {
+  width: 52px;
+  height: 52px;
+  font-size: 22px;
+}
+
+.play {
+  width: 64px;
+  height: 64px;
+  font-size: 26px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: transparent;
+}
+
+.nav:hover { border-color: var(--accent); }
+.play:hover { filter: brightness(1.05); }
+.nav:active, .play:active { transform: translateY(1px); }
+
+.hint {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  margin: 0;
+}
+
+kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  padding: 2px 6px;
+  border: 1px solid var(--kbd-border);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--kbd-bg);
+  color: var(--fg);
+}
+
+/* ---------- Small screens ---------- */
+
+@media (max-width: 520px) {
+  .topbar { padding: 12px 16px; gap: 10px; }
+  .topbar h1 { font-size: 16px; }
+  .controls-top { gap: 10px; width: 100%; }
+  select { flex: 1; min-width: 0; }
+  .stage { padding: 16px; gap: 16px; }
+  .nav { width: 44px; height: 44px; font-size: 20px; }
+  .play { width: 56px; height: 56px; font-size: 24px; }
+}

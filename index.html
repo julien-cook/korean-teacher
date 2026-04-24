@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Korean Teacher</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Korean Teacher</h1>
+    <div class="controls-top">
+      <div class="seg" role="radiogroup" aria-label="Mode">
+        <button class="seg-btn" data-mode="learn" role="radio" aria-checked="false">Learn</button>
+        <button class="seg-btn" data-mode="test"  role="radio" aria-checked="true">Test</button>
+      </div>
+      <label class="deck-select">
+        Deck
+        <select id="deck"></select>
+      </label>
+      <label class="deck-select">
+        Voice
+        <select id="voice"></select>
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="shuffle">
+        Shuffle
+      </label>
+      <label class="toggle">
+        <input type="checkbox" id="autoplay">
+        Auto-play audio
+      </label>
+      <button id="reshuffle" class="mini" title="New random order / regenerate">↻ New set</button>
+    </div>
+  </header>
+
+  <main class="stage">
+    <div class="counter" id="counter">— / —</div>
+
+    <button class="card" id="card" data-mode="test" aria-label="Flashcard">
+      <div class="card-inner" id="card-inner">
+        <div class="face face-front">
+          <div class="front-text" id="front-text">…</div>
+          <div class="back-text learn-reveal" id="front-back-text"></div>
+          <div class="extra-text learn-reveal" id="front-extra-text"></div>
+        </div>
+        <div class="face face-back">
+          <div class="back-text" id="back-text">…</div>
+          <div class="extra-text" id="extra-text"></div>
+        </div>
+      </div>
+    </button>
+
+    <div class="controls-bottom">
+      <button id="prev" class="nav" aria-label="Previous">←</button>
+      <button id="play" class="play" aria-label="Play audio">🔊</button>
+      <button id="next" class="nav" aria-label="Next">→</button>
+    </div>
+
+    <p class="hint" id="hint">
+      Click the card to flip · <kbd>←</kbd> <kbd>→</kbd> navigate · <kbd>Space</kbd> flip · <kbd>P</kbd> play audio
+    </p>
+  </main>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
