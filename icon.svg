@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" ry="96" fill="#d64545"/>
+  <text x="256" y="256"
+        text-anchor="middle" dominant-baseline="central"
+        fill="#ffffff"
+        font-family="-apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif"
+        font-weight="700"
+        font-size="320">한</text>
+</svg>
