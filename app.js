@@ -204,6 +204,10 @@ function pickSelectedVoice() {
   }
 }
 
+// Held at module scope: a locally-scoped utterance can be garbage-collected
+// mid-sentence in Chrome/Safari, which cuts the audio off part-way through.
+let currentUtterance = null;
+
 function speakCurrent() {
   if (!window.speechSynthesis) return;
   const card = state.cards[state.index];
@@ -212,16 +216,23 @@ function speakCurrent() {
   if (!text) return;
 
   speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = "ko-KR";
-  if (selectedVoice) u.voice = selectedVoice;
-  u.rate = 0.9;
-  speechSynthesis.speak(u);
+  // cancel() is asynchronous internally; speaking in the same tick races it and
+  // the new utterance is silently dropped. A zero-delay timeout is enough.
+  setTimeout(() => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "ko-KR";
+    if (selectedVoice) u.voice = selectedVoice;
+    u.rate = 0.9;
+    currentUtterance = u;
+    speechSynthesis.speak(u);
+  }, 0);
 }
 
 if (window.speechSynthesis) {
   refreshVoices();
-  speechSynthesis.onvoiceschanged = refreshVoices;
+  // addEventListener, not onvoiceschanged: a bare property assignment is a single
+  // slot, so any other script on the page that wants voices silently clobbers this.
+  speechSynthesis.addEventListener("voiceschanged", refreshVoices);
 }
 
 // ---------- events ----------
@@ -296,3 +307,13 @@ els.shuffle.checked = state.shuffled;
 els.autoplay.checked = state.autoplay;
 applyMode();
 loadDeck(state.deckId);
+
+// Service worker registration lives here rather than inline in index.html so that
+// a Content-Security-Policy of `script-src 'self'` does not block it.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("service-worker.js").catch((err) => {
+      console.warn("Service worker registration failed:", err);
+    });
+  });
+}

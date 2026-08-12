@@ -39,6 +39,7 @@
         Auto-play audio
       </label>
       <button id="reshuffle" class="mini" title="New random order / regenerate">↻ New set</button>
+      <a class="mini" href="homework.html">📝 Homework</a>
     </div>
   </header>
 
@@ -72,14 +73,5 @@
 
   <script src="data.js"></script>
   <script src="app.js"></script>
-  <script>
-    if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("service-worker.js").catch((err) => {
-          console.warn("Service worker registration failed:", err);
-        });
-      });
-    }
-  </script>
 </body>
 </html>

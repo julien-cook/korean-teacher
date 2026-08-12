@@ -40,7 +40,12 @@ body {
                "Malgun Gothic", "Noto Sans KR", sans-serif;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  /* dvh, not vh: on mobile Safari 100vh is the *expanded* viewport, so the last
+     controls sit below the fold whenever the browser chrome is showing. */
+  min-height: 100dvh;
+  /* index.html sets viewport-fit=cover, so without this the bottom controls sit
+     under the iOS home indicator, where the swipe-up gesture swallows taps. */
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* ---------- Top bar ---------- */
@@ -100,7 +105,9 @@ select {
 
 .toggle input { accent-color: var(--accent); }
 
-button.mini {
+/* Not qualified with `button` — the homework link is an <a>, which would
+   otherwise render completely unstyled. */
+.mini {
   font: inherit;
   font-size: 13px;
   color: var(--fg);
@@ -111,7 +118,9 @@ button.mini {
   cursor: pointer;
 }
 
-button.mini:hover { border-color: var(--accent); }
+.mini:hover { border-color: var(--accent); }
+
+a.mini { display: inline-block; text-decoration: none; }
 
 /* ---------- Mode segmented control ---------- */
 
