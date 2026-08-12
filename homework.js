@@ -18,12 +18,6 @@ const el = {
   conn: $("hw-conn"),
   reload: $("hw-reload"),
   setup: $("hw-setup"),
-  tabRelay: $("tab-relay"),
-  tabDirect: $("tab-direct"),
-  paneRelay: $("pane-relay"),
-  paneDirect: $("pane-direct"),
-  relayUrl: $("hw-relay-url"),
-  relayToken: $("hw-relay-token"),
   key: $("hw-key"),
   model: $("hw-model"),
   base: $("hw-base"),
@@ -57,10 +51,7 @@ const el = {
 };
 
 const cfg = {
-  mode: "relay",          // "relay" | "direct"
-  relayUrl: "",
-  relayToken: "",
-  key: "",
+  key: "",                // the user's own xAI key, pasted at startup
   model: DEFAULT_MODEL,
   base: DEFAULT_BASE,
   remember: true,
@@ -85,7 +76,7 @@ function loadCfg() {
     const raw = localStorage.getItem(HW_CFG_KEY);
     if (!raw) return;
     const p = JSON.parse(raw);
-    for (const k of ["mode", "relayUrl", "relayToken", "key", "model", "base"]) {
+    for (const k of ["key", "model", "base"]) {
       if (typeof p[k] === "string") cfg[k] = p[k];
     }
     if (typeof p.remember === "boolean") cfg.remember = p.remember;
@@ -102,25 +93,17 @@ function saveCfg() {
 }
 
 function isConfigured() {
-  return cfg.mode === "relay"
-    ? Boolean(cfg.relayUrl && cfg.relayToken)
-    : Boolean(cfg.key);
+  return Boolean(cfg.key);
 }
 
 // ---------- transport ----------
 
-// Returns { url, headers } for a given API path, in whichever mode is active.
+// Returns { url, headers } for a given API path. The key goes straight from
+// this browser to xAI; nothing sits in between.
 function endpoint(path, extraHeaders) {
   const headers = Object.assign({}, extraHeaders || {});
-  let url;
-  if (cfg.mode === "relay") {
-    url = cfg.relayUrl.replace(/\/+$/, "") + path;
-    headers["x-relay-token"] = cfg.relayToken;
-  } else {
-    url = (cfg.base || DEFAULT_BASE).replace(/\/+$/, "") + path;
-    headers["Authorization"] = "Bearer " + cfg.key;
-  }
-  return { url, headers };
+  headers["Authorization"] = "Bearer " + cfg.key;
+  return { url: (cfg.base || DEFAULT_BASE).replace(/\/+$/, "") + path, headers };
 }
 
 // A fetch that fails with a message a human can act on. A bare "TypeError:
@@ -133,12 +116,15 @@ async function apiFetch(path, init, label) {
     res = await fetch(url, Object.assign({}, init, { headers }));
   } catch (err) {
     if (!navigator.onLine) throw new Error("You're offline. Reconnect and try again.");
+    // A bare "Failed to fetch" covers CORS, DNS, offline and airplane mode
+    // identically. Name the likely cause rather than leaving it cryptic.
     throw new Error(
-      `Couldn't reach the ${label || "API"}. This is usually one of: the browser blocked the ` +
-      `request (CORS), the URL is wrong, or the network dropped. ` +
-      (cfg.mode === "direct"
-        ? "Chat is normally blocked in browser-key mode — try the relay."
-        : "Check the relay URL, and that `wrangler deploy` succeeded.")
+      `Couldn't reach xAI for ${label || "that request"}. The browser gave no detail, which ` +
+      `almost always means one of two things:\n\n` +
+      `1. xAI refused a request straight from a web page (a CORS block). If ${label || "this"} ` +
+      `is chat, that is the known limitation — the speech endpoints usually still work.\n` +
+      `2. The network dropped.\n\n` +
+      `Open the browser console for the real error.`
     );
   }
   if (!res.ok) {
@@ -147,17 +133,13 @@ async function apiFetch(path, init, label) {
       const text = await res.clone().text();
       detail = text.slice(0, 400);
     } catch (_) { /* body already consumed or empty */ }
-    if (res.status === 401) {
+    if (res.status === 401 || res.status === 403) {
       throw new Error(
-        cfg.mode === "relay"
-          ? "Relay rejected the token (401). Check RELAY_TOKEN matches what you set with wrangler."
-          : "xAI rejected the key (401). Check the key is current and has credit."
+        `xAI rejected the key (${res.status}). Check it is current, has credit, and — for ` +
+        `speech — that voice is enabled for your team on console.x.ai.`
       );
     }
     if (res.status === 429) throw new Error("Rate limited (429). Wait a moment and try again.");
-    if (res.status === 404 && cfg.mode === "relay") {
-      throw new Error("Relay returned 404. Is the Relay URL right, and does the Worker allow this path?");
-    }
     throw new Error(`${label || "API"} error ${res.status}. ${detail}`);
   }
   return res;
@@ -877,27 +859,14 @@ function showSetup(show) {
   el.task.hidden = show;
   el.conn.hidden = show;
   if (!show) {
-    const where = cfg.mode === "relay"
-      ? new URL(cfg.relayUrl).host
-      : new URL(cfg.base || DEFAULT_BASE).host;
-    el.conn.textContent = "→ " + where;
+    // Always show where the key is being sent. If this ever reads as anything
+    // other than api.x.ai, something has redirected it.
+    el.conn.textContent = "→ " + new URL(cfg.base || DEFAULT_BASE).host;
     el.conn.hidden = false;
   }
 }
 
-function setMode(mode) {
-  cfg.mode = mode;
-  const relay = mode === "relay";
-  el.tabRelay.setAttribute("aria-selected", String(relay));
-  el.tabDirect.setAttribute("aria-selected", String(!relay));
-  el.paneRelay.hidden = !relay;
-  el.paneDirect.hidden = relay;
-}
-
 function fillSetup() {
-  setMode(cfg.mode);
-  el.relayUrl.value = cfg.relayUrl;
-  el.relayToken.value = cfg.relayToken;
   el.key.value = cfg.key;
   el.model.value = cfg.model || DEFAULT_MODEL;
   el.base.value = cfg.base || DEFAULT_BASE;
@@ -905,8 +874,6 @@ function fillSetup() {
 }
 
 function readSetup() {
-  cfg.relayUrl = el.relayUrl.value.trim();
-  cfg.relayToken = el.relayToken.value.trim();
   cfg.key = el.key.value.trim();
   cfg.model = el.model.value.trim() || DEFAULT_MODEL;
   cfg.base = el.base.value.trim() || DEFAULT_BASE;
@@ -921,36 +888,31 @@ function probeMsg(text, cls) {
 async function probeTransport() {
   readSetup();
 
-  if (cfg.mode === "relay") {
-    if (!/^https:\/\//i.test(cfg.relayUrl)) { probeMsg("Relay URL must start with https://", "err"); return false; }
-    if (!cfg.relayToken) { probeMsg("Relay token is required.", "err"); return false; }
-  } else {
-    if (!cfg.key) { probeMsg("Paste a key, or switch to the relay tab.", "err"); return false; }
-    if (!/^https:\/\//i.test(cfg.base)) { probeMsg("API base must start with https://", "err"); return false; }
-  }
+  if (!cfg.key) { probeMsg("Paste your xAI key first.", "err"); return false; }
+  if (!/^https:\/\//i.test(cfg.base)) { probeMsg("API base must start with https://", "err"); return false; }
 
-  probeMsg("Testing chat…");
+  probeMsg("Checking your key…");
   try {
     await chat(
       [{ role: "user", content: "Reply with the single word: ok" }],
       null
     );
   } catch (err) {
-    probeMsg("Chat failed. " + err.message, "err");
+    probeMsg("Couldn't start. " + err.message, "err");
     return false;
   }
 
-  probeMsg("Chat works. Testing speech-to-text…");
+  probeMsg("Key works. Checking the microphone…");
   try {
     const wav = silentWav(0.2);
     const fd = new FormData();
     fd.append("file", wav, "probe.wav");
     await apiFetch("/v1/stt", { method: "POST", body: fd }, "speech-to-text");
     cfg.sttOk = true;
-    probeMsg("Chat and microphone both working.", "ok");
-  } catch (err) {
+    probeMsg("All set — typing and the microphone both work.", "ok");
+  } catch (_) {
     cfg.sttOk = false;
-    probeMsg("Chat works. Microphone unavailable (" + err.message + ") — typing still works.", "ok");
+    probeMsg("All set. The microphone isn't available, so type instead.", "ok");
   }
 
   saveCfg();
@@ -1099,8 +1061,6 @@ if (window.visualViewport) {
 
 // ---------- events ----------
 
-el.tabRelay.addEventListener("click", () => setMode("relay"));
-el.tabDirect.addEventListener("click", () => setMode("direct"));
 el.reload.addEventListener("click", () => location.reload());
 el.conn.addEventListener("click", () => { fillSetup(); showSetup(true); });
 
@@ -1114,11 +1074,10 @@ el.save.addEventListener("click", async () => {
 el.clear.addEventListener("click", () => {
   localStorage.removeItem(HW_CFG_KEY);
   Object.assign(cfg, {
-    mode: "relay", relayUrl: "", relayToken: "", key: "",
-    model: DEFAULT_MODEL, base: DEFAULT_BASE, remember: true, sttOk: false,
+    key: "", model: DEFAULT_MODEL, base: DEFAULT_BASE, remember: true, sttOk: false,
   });
   fillSetup();
-  probeMsg("Cleared.", "ok");
+  probeMsg("Key cleared from this browser.", "ok");
 });
 
 el.send.addEventListener("click", () => {
