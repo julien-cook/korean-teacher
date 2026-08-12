@@ -402,3 +402,19 @@
   width: 100%;
   margin: 0;
 }
+
+.hw-logbody {
+  max-height: 45dvh;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+}

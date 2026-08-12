@@ -24,6 +24,7 @@
     <a class="mini" href="index.html">← Cards</a>
     <strong class="hw-title">숙제</strong>
     <button id="hw-reload" class="mini" title="Reload">↻</button>
+    <button id="hw-logbtn" class="mini" title="Event log">Log</button>
     <button id="hw-conn" class="mini hw-conn" hidden>⚙︎ Setup</button>
   </header>
 
@@ -102,6 +103,22 @@
       <span class="hw-count" id="hw-count"></span>
     </div>
     <p id="hw-notice" class="hw-notice" hidden></p>
+  </section>
+
+  <!-- ---------- event log ---------- -->
+  <section id="hw-logpanel" class="hw-panel" hidden>
+    <h2>Event log</h2>
+    <p class="hw-note">
+      What the app and the call actually did. If something goes wrong, copy this
+      and send it over — it says far more than a description can.
+    </p>
+    <pre id="hw-logbody" class="hw-logbody"></pre>
+    <div class="hw-actions">
+      <button id="hw-logcopy" class="mini hw-primary">Copy log</button>
+      <button id="hw-logclear" class="mini">Clear</button>
+      <button id="hw-logclose" class="mini">Close</button>
+    </div>
+    <p id="hw-logstatus" class="hw-probe" role="status" aria-live="polite"></p>
   </section>
 
   <main class="hw-transcript" id="hw-transcript" aria-live="polite"></main>
