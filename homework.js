@@ -482,6 +482,25 @@ function scrollDown() {
   });
 }
 
+// A bubble with an inline action — used to offer the log at the exact moment
+// something has just gone wrong, rather than making you go and find it.
+function addBubbleWithAction(who, text, label, fn) {
+  const div = document.createElement("div");
+  div.className = "bubble " + who;
+  const p = document.createElement("div");
+  p.textContent = text;
+  div.appendChild(p);
+  const btn = document.createElement("button");
+  btn.className = "mini";
+  btn.style.marginTop = "8px";
+  btn.textContent = label;
+  btn.addEventListener("click", () => fn(btn));
+  div.appendChild(btn);
+  el.transcript.appendChild(div);
+  scrollDown();
+  return div;
+}
+
 function addBubble(who, text) {
   const div = document.createElement("div");
   div.className = "bubble " + who;
@@ -1150,6 +1169,30 @@ function loadLog() {
   } catch (_) { logBuf = []; }
 }
 
+// Copy the log for one call only. 400 mixed lines is worse than 40 relevant ones.
+async function copyLogSlice(from, btn) {
+  const slice = logBuf.slice(from);
+  const text = [
+    "한국어 숙제 — call log",
+    "when: " + new Date().toISOString(),
+    "agent: " + navigator.userAgent,
+    "model: " + (cfg.model || DEFAULT_MODEL) + " | voice: " + (cfg.voice || "ara"),
+    "sentences: " + state.sentences.length,
+    "-".repeat(60),
+  ].join("\n") + "\n" + slice.map((e) => `${e.t} [${e.k}] ${e.m}`).join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    if (btn) { btn.textContent = "Copied " + slice.length + " lines ✓"; btn.disabled = true; }
+  } catch (_) {
+    // Standalone PWAs sometimes block the clipboard API outright.
+    if (btn) { btn.textContent = "Opening log…"; btn.disabled = true; }
+    el.logPanel.hidden = false;
+    renderLog();
+    el.logPanel.scrollIntoView({ block: "start" });
+    el.logStatus.textContent = "Clipboard blocked — select the text above and copy.";
+  }
+}
+
 function logText() {
   const head = [
     "한국어 숙제 — event log",
@@ -1205,7 +1248,7 @@ const CALL_TOOLS = [{
 const call = {
   ws: null, ctx: null, stream: null, micNode: null, srcNode: null,
   active: false, ready: false, configSent: false, muted: false,
-  playQueue: [], playhead: 0, gen: 0,
+  playQueue: [], playhead: 0, gen: 0, logStart: 0,
   userBubble: null, botBubble: null,
   // The realtime API announces one finished tool call TWICE — once as
   // response.function_call_arguments.done and again inside
@@ -1460,6 +1503,7 @@ function connectCall(which) {
 async function startCall() {
   if (call.active) return;
   if (!cfg.key) { showSetup(true); return; }
+  call.logStart = logBuf.length;
   logEvent("call", "starting");
   call.gen++;
   const gen = call.gen;
@@ -1515,8 +1559,12 @@ function endCall(message) {
   call.handledCalls.clear();
   el.callbar.hidden = true;
   el.call.disabled = false;
-  if (message) addBubble("bot", message).classList.add("err");
-  else if (wasActive) addBubble("bot", "Call ended.");
+  const from = call.logStart;
+  if (message) {
+    addBubbleWithAction("bot err", message, "📋 Copy call log", (btn) => copyLogSlice(from, btn));
+  } else if (wasActive) {
+    addBubbleWithAction("bot", "Call ended.", "📋 Copy call log", (btn) => copyLogSlice(from, btn));
+  }
 }
 
 // A call holds the microphone open; dropping the tab must not leave it live.
