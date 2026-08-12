@@ -21,6 +21,15 @@ const el = {
   key: $("hw-key"),
   model: $("hw-model"),
   base: $("hw-base"),
+  persona: $("hw-persona"),
+  personaReset: $("hw-persona-reset"),
+  voice: $("hw-voice"),
+  call: $("hw-call"),
+  callbar: $("hw-callbar"),
+  orb: $("hw-orb"),
+  callStatus: $("hw-callstatus"),
+  mute: $("hw-mute"),
+  hangup: $("hw-hangup"),
   remember: $("hw-remember"),
   save: $("hw-save"),
   clear: $("hw-clear"),
@@ -54,6 +63,8 @@ const cfg = {
   key: "",                // the user's own xAI key, pasted at startup
   model: DEFAULT_MODEL,
   base: DEFAULT_BASE,
+  persona: "",            // empty = use DEFAULT_PERSONA
+  voice: "ara",
   remember: true,
   sttOk: false,
 };
@@ -76,7 +87,7 @@ function loadCfg() {
     const raw = localStorage.getItem(HW_CFG_KEY);
     if (!raw) return;
     const p = JSON.parse(raw);
-    for (const k of ["key", "model", "base"]) {
+    for (const k of ["key", "model", "base", "persona", "voice"]) {
       if (typeof p[k] === "string") cfg[k] = p[k];
     }
     if (typeof p.remember === "boolean") cfg.remember = p.remember;
@@ -239,9 +250,13 @@ function taskBlock() {
 }
 
 function systemPrompt() {
-  return `You are a patient Korean tutor helping ONE specific beginner, Julien, write his weekly
-homework text message for his Korean teacher. You know exactly what he has studied,
-because his flashcard decks are listed below.
+  return `${persona()}
+
+Everything below is HOW you teach. The character above is only how you sound — if the
+two ever conflict, the rules below win.
+
+You are helping ONE specific beginner, Julien, write his weekly homework for his Korean
+class. You know exactly what he has studied, because his flashcard decks are listed below.
 
 ## THE TASK
 Every week his teacher asks:
@@ -760,7 +775,8 @@ async function send(userText, opts) {
   el.send.disabled = false;
 }
 
-function acceptSentence(day) {
+function acceptSentence(day, opts) {
+  const fromCall = opts && opts.fromCall;
   state.sentences.push({
     day: day.day || "",
     ko: day.ko,
@@ -771,9 +787,18 @@ function acceptSentence(day) {
   saveDraft();
 
   const p = progress();
+
+  // On a call the teacher is already talking, so a written quiz mid-sentence
+  // would be noise and a follow-up chat turn would talk over her.
+  if (fromCall) {
+    renderDayCard(day, { accepted: true });
+    if (p.done) showFinal();
+    return;
+  }
+
   renderBlankCheck(day.ko, () => {
     if (p.done) {
-      addBubble("bot", "That's all eight. Hit Finish when you're ready and I'll put the message together.");
+      addBubble("bot", "That's everything. Hit Finish when you're ready and I'll put the message together.");
       showFinal();
       return;
     }
@@ -870,6 +895,8 @@ function fillSetup() {
   el.key.value = cfg.key;
   el.model.value = cfg.model || DEFAULT_MODEL;
   el.base.value = cfg.base || DEFAULT_BASE;
+  el.persona.value = cfg.persona || DEFAULT_PERSONA;
+  el.voice.value = cfg.voice || "ara";
   el.remember.checked = cfg.remember;
 }
 
@@ -877,7 +904,13 @@ function readSetup() {
   cfg.key = el.key.value.trim();
   cfg.model = el.model.value.trim() || DEFAULT_MODEL;
   cfg.base = el.base.value.trim() || DEFAULT_BASE;
+  cfg.persona = el.persona.value.trim();
+  cfg.voice = el.voice.value || "ara";
   cfg.remember = el.remember.checked;
+}
+
+function persona() {
+  return cfg.persona || DEFAULT_PERSONA;
 }
 
 function probeMsg(text, cls) {
@@ -1059,6 +1092,334 @@ if (window.visualViewport) {
   vv.addEventListener("scroll", sync);
 }
 
+
+// ---------- live call (xAI realtime speech-to-speech) ----------
+//
+// The browser opens wss://api.x.ai/v1/realtime directly. WebSocket handshakes are
+// exempt from CORS, so this reaches xAI from a static page where plain fetch to
+// /v1/chat/completions may not.
+//
+// Auth: xAI documents a server-minted ephemeral token in the subprotocol. We have
+// no server, so we try the raw key in both known subprotocol shapes. If xAI
+// refuses both, the call cannot work without a server and we say so plainly.
+
+const REALTIME_URL = "wss://api.x.ai/v1/realtime?model=grok-voice-latest";
+const CALL_PROTOS = [
+  (k) => ["xai-client-secret." + k],
+  (k) => ["realtime", "openai-insecure-api-key." + k, "openai-beta.realtime-v1"],
+];
+
+const CALL_TOOLS = [{
+  type: "function",
+  name: "save_sentence",
+  description:
+    "Save one Korean sentence that Julien has agreed to put in his homework. Call this " +
+    "the moment he accepts a sentence — do not wait until the end, and never read the " +
+    "arguments out loud.",
+  parameters: {
+    type: "object",
+    properties: {
+      day: { type: "string", description: "The Korean weekday (월요일 …) or 소개 for a self-introduction sentence." },
+      ko: { type: "string", description: "The Korean sentence exactly as he will send it." },
+      rr: { type: "string", description: "Revised Romanisation of the pronunciation." },
+      en: { type: "string", description: "Plain English gloss." },
+    },
+    required: ["day", "ko", "en"],
+  },
+}];
+
+const call = {
+  ws: null, ctx: null, stream: null, micNode: null, srcNode: null,
+  active: false, ready: false, configSent: false, muted: false,
+  playQueue: [], playhead: 0, gen: 0,
+  userBubble: null, botBubble: null,
+};
+
+function callSend(o) {
+  if (call.ws && call.ws.readyState === 1) call.ws.send(JSON.stringify(o));
+}
+
+function setCallStatus(text, orbClass) {
+  el.callStatus.textContent = text;
+  if (orbClass !== undefined) el.orb.className = "hw-orb " + orbClass;
+}
+
+// --- audio out ---
+function playDelta(b64) {
+  const ctx = call.ctx;
+  if (!ctx) return;
+  const bin = atob(b64);
+  const buf = new ArrayBuffer(bin.length);
+  const u8 = new Uint8Array(buf);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  const i16 = new Int16Array(buf);
+  if (!i16.length) return;
+  const f32 = new Float32Array(i16.length);
+  for (let i = 0; i < i16.length; i++) f32[i] = i16[i] / 32768;
+  const ab = ctx.createBuffer(1, f32.length, ctx.sampleRate);
+  ab.copyToChannel(f32, 0);
+  const src = ctx.createBufferSource();
+  src.buffer = ab;
+  src.connect(ctx.destination);
+  const t = Math.max(ctx.currentTime, call.playhead);
+  src.start(t);
+  call.playhead = t + ab.duration;
+  call.playQueue.push(src);
+  src.onended = () => {
+    const i = call.playQueue.indexOf(src);
+    if (i >= 0) call.playQueue.splice(i, 1);
+    if (!call.playQueue.length && call.active) {
+      setCallStatus(call.muted ? "Muted" : "Listening…", call.muted ? "muted" : "listening");
+    }
+  };
+  if (!call.muted) setCallStatus("선생님 is speaking…", "speaking");
+}
+
+function stopPlayback() {
+  call.playQueue.forEach((s) => { try { s.stop(); } catch (_) {} });
+  call.playQueue = [];
+  call.playhead = 0;
+}
+
+// --- audio in ---
+function f32ToB64(f32) {
+  const i16 = new Int16Array(f32.length);
+  for (let i = 0; i < f32.length; i++) {
+    const v = Math.max(-1, Math.min(1, f32[i]));
+    i16[i] = v < 0 ? v * 0x8000 : v * 0x7fff;
+  }
+  const bytes = new Uint8Array(i16.buffer);
+  let bin = "";
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  }
+  return btoa(bin);
+}
+
+function wireCallMic() {
+  const ctx = call.ctx;
+  call.srcNode = ctx.createMediaStreamSource(call.stream);
+  const proc = ctx.createScriptProcessor(4096, 1, 1);
+  let chunks = [], len = 0;
+  const target = Math.round(ctx.sampleRate * 0.1);   // ~100 ms per frame
+  proc.onaudioprocess = (e) => {
+    if (!call.active || !call.ready || call.muted) return;
+    const d = e.inputBuffer.getChannelData(0);
+    chunks.push(new Float32Array(d));
+    len += d.length;
+    if (len >= target) {
+      const all = new Float32Array(len);
+      let o = 0;
+      for (const c of chunks) { all.set(c, o); o += c.length; }
+      chunks = []; len = 0;
+      callSend({ type: "input_audio_buffer.append", audio: f32ToB64(all) });
+    }
+  };
+  call.srcNode.connect(proc);
+  proc.connect(ctx.destination);
+  call.micNode = proc;
+}
+
+// --- live transcript into the normal chat ---
+function liveUser(text) {
+  if (!call.userBubble) call.userBubble = addBubble("user", "");
+  call.userBubble.textContent = text;
+  scrollDown();
+}
+
+function liveBot(delta) {
+  if (!call.botBubble) call.botBubble = addBubble("bot", "");
+  call.botBubble.textContent += delta;
+  scrollDown();
+}
+
+function sessionUpdate() {
+  return {
+    type: "session.update",
+    session: {
+      voice: cfg.voice || "ara",
+      instructions: systemPrompt() +
+        "\n\n## YOU ARE ON A VOICE CALL\n" +
+        "He can hear you, so speak like a person: short turns, no markdown, no bullet " +
+        "points, no reading out punctuation. Never say the words 'day', 'ko', 'rr' or " +
+        "'en' as field names, and never spell out a block format — on a call you save a " +
+        "sentence by CALLING THE save_sentence TOOL, silently, and then just carry on " +
+        "talking. Say the Korean sentence out loud clearly and slowly once, then ask if " +
+        "he is happy with it.",
+      audio: {
+        input: { format: { type: "audio/pcm", rate: call.ctx.sampleRate }, transcription: {} },
+        output: { format: { type: "audio/pcm", rate: call.ctx.sampleRate } },
+      },
+      turn_detection: { type: "server_vad", threshold: 0.8, silence_duration_ms: 600, prefix_padding_ms: 300 },
+      tools: CALL_TOOLS,
+    },
+  };
+}
+
+function onCallTool(name, callId, argsStr) {
+  let out = { ok: false };
+  if (name === "save_sentence") {
+    try {
+      const a = JSON.parse(argsStr || "{}");
+      if (a.ko) {
+        acceptSentence({ day: a.day || "", ko: a.ko, rr: a.rr || "", en: a.en || "" }, { fromCall: true });
+        out = { ok: true, saved: a.ko, total: state.sentences.length, remaining: Math.max(0, task.target - state.sentences.length) };
+      }
+    } catch (_) { out = { ok: false, error: "bad arguments" }; }
+  }
+  callSend({ type: "conversation.item.create", item: { type: "function_call_output", call_id: callId, output: JSON.stringify(out) } });
+  callSend({ type: "response.create" });
+}
+
+function handleCallEvent(msg) {
+  switch (msg.type) {
+    case "conversation.created":
+    case "session.created":
+      if (call.configSent) break;
+      call.configSent = true;
+      callSend(sessionUpdate());
+      break;
+    case "session.updated":
+      if (!call.ready) {
+        call.ready = true;
+        setCallStatus("Listening…", "listening");
+        callSend({ type: "response.create" });
+      }
+      break;
+    case "error":
+      addBubble("bot", "Call error: " + JSON.stringify(msg.error || msg).slice(0, 200)).classList.add("err");
+      break;
+    case "input_audio_buffer.speech_started":
+      stopPlayback();
+      call.userBubble = null;
+      if (call.active) setCallStatus("Listening…", "listening");
+      break;
+    case "conversation.item.input_audio_transcription.updated":
+      liveUser(msg.transcript || msg.delta || msg.text || "");
+      break;
+    case "conversation.item.input_audio_transcription.completed":
+      if (msg.transcript || msg.text) liveUser(msg.transcript || msg.text);
+      call.userBubble = null;
+      break;
+    case "response.created":
+      call.botBubble = null;
+      break;
+    case "response.output_audio.delta":
+      if (msg.delta) playDelta(msg.delta);
+      break;
+    case "response.output_audio_transcript.delta":
+      if (msg.delta) liveBot(msg.delta);
+      break;
+    case "response.function_call_arguments.done":
+      onCallTool(msg.name, msg.call_id, msg.arguments);
+      break;
+    case "response.output_item.done":
+      if (msg.item && msg.item.type === "function_call") {
+        onCallTool(msg.item.name, msg.item.call_id, msg.item.arguments);
+      }
+      break;
+  }
+}
+
+function connectCall(which) {
+  const protos = CALL_PROTOS[which](cfg.key);
+  let opened = false;
+  let ws;
+  try {
+    ws = new WebSocket(REALTIME_URL, protos);
+  } catch (err) {
+    endCall("Couldn't open the call: " + err.message);
+    return;
+  }
+  call.ws = ws;
+  ws.onopen = () => { opened = true; setCallStatus("Connected, setting up…", "connecting"); };
+  ws.onmessage = (e) => {
+    try { handleCallEvent(JSON.parse(e.data)); } catch (_) { /* non-JSON frame */ }
+  };
+  ws.onclose = (e) => {
+    if (call.ws !== ws) return;                 // superseded by a newer attempt
+    if (!opened && which + 1 < CALL_PROTOS.length) {
+      setCallStatus("Retrying…", "connecting");
+      connectCall(which + 1);
+      return;
+    }
+    if (!opened) {
+      endCall(
+        "xAI refused the call. Its realtime API normally wants a short-lived token " +
+        "minted by a server, and a raw key was rejected — so voice calling needs a " +
+        "server that this app deliberately doesn't have. Typing still works. " +
+        "(Also check voice is enabled for your team on console.x.ai.)"
+      );
+      return;
+    }
+    if (call.active) endCall("Call ended" + (e.code ? " (" + e.code + ")" : "") + ".");
+  };
+}
+
+async function startCall() {
+  if (call.active) return;
+  if (!cfg.key) { showSetup(true); return; }
+  call.gen++;
+  const gen = call.gen;
+
+  el.callbar.hidden = false;
+  el.call.disabled = true;
+  setCallStatus("Connecting…", "connecting");
+
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    call.ctx = new Ctx();
+    await call.ctx.resume();
+    call.stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    if (gen !== call.gen) throw { aborted: true };
+  } catch (err) {
+    if (err && err.aborted) return;
+    const denied = err && (err.name === "NotAllowedError" || err.name === "SecurityError");
+    endCall(denied
+      ? "I need microphone permission to call. Allow it in your browser settings, or just type."
+      : "Couldn't open the microphone (" + (err && err.name) + "). Typing still works.");
+    return;
+  }
+
+  call.active = true;
+  call.ready = false;
+  call.configSent = false;
+  call.muted = false;
+  el.mute.textContent = "Mute";
+  wireCallMic();
+  connectCall(0);
+}
+
+function endCall(message) {
+  call.gen++;
+  const wasActive = call.active;
+  call.active = false;
+  call.ready = false;
+  call.configSent = false;
+  stopPlayback();
+  const ws = call.ws;
+  call.ws = null;
+  if (ws) { try { ws.close(); } catch (_) {} }
+  if (call.micNode) { try { call.micNode.disconnect(); } catch (_) {} call.micNode = null; }
+  if (call.srcNode) { try { call.srcNode.disconnect(); } catch (_) {} call.srcNode = null; }
+  if (call.stream) { call.stream.getTracks().forEach((t) => t.stop()); call.stream = null; }
+  if (call.ctx) { call.ctx.close().catch(() => {}); call.ctx = null; }
+  call.userBubble = null;
+  call.botBubble = null;
+  el.callbar.hidden = true;
+  el.call.disabled = false;
+  if (message) addBubble("bot", message).classList.add("err");
+  else if (wasActive) addBubble("bot", "Call ended.");
+}
+
+// A call holds the microphone open; dropping the tab must not leave it live.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden && call.active) endCall("Call ended — you left the app.");
+});
+
 // ---------- events ----------
 
 el.reload.addEventListener("click", () => location.reload());
@@ -1094,6 +1455,21 @@ el.input.addEventListener("keydown", (e) => {
 });
 
 el.mic.addEventListener("click", () => { rec.on ? stopRecording() : startRecording(); });
+
+el.call.addEventListener("click", () => startCall());
+el.hangup.addEventListener("click", () => endCall());
+el.mute.addEventListener("click", () => {
+  if (!call.active) return;
+  call.muted = !call.muted;
+  el.mute.textContent = call.muted ? "Unmute" : "Mute";
+  setCallStatus(call.muted ? "Muted" : "Listening…", call.muted ? "muted" : "listening");
+});
+
+el.personaReset.addEventListener("click", () => {
+  el.persona.value = DEFAULT_PERSONA;
+  cfg.persona = "";
+  probeMsg("Teacher reset to the default.", "ok");
+});
 
 el.finish.addEventListener("click", () => {
   if (!state.sentences.length) return;
