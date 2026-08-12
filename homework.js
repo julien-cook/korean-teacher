@@ -838,10 +838,13 @@ function buildMessage() {
 }
 
 function showFinal() {
+  // Move it into the transcript so it arrives as the last thing in the
+  // conversation, above the composer, rather than as a slab underneath it.
+  if (el.final.parentNode !== el.transcript) el.transcript.appendChild(el.final);
   el.final.hidden = false;
   el.finalCount.textContent = `${state.sentences.length} / ${task.target}`;
   el.message.value = buildMessage();
-  el.final.scrollIntoView({ behavior: "smooth", block: "start" });
+  scrollDown();
   saveDraft();
 }
 
@@ -872,8 +875,12 @@ function clearDraft() {
   localStorage.removeItem(HW_DRAFT_KEY);
   state.sentences = [];
   state.history = [];
-  el.transcript.textContent = "";
+  // Pull the final panel out BEFORE wiping the transcript — it lives inside it
+  // once shown, and clearing textContent would destroy the node and every
+  // listener bound to it.
+  if (el.final.parentNode === el.transcript) el.transcript.removeChild(el.final);
   el.final.hidden = true;
+  el.transcript.textContent = "";
   renderProgress();
 }
 

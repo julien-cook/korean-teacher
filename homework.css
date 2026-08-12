@@ -394,3 +394,11 @@
   border: 1px solid var(--card-border);
   border-radius: 10px;
 }
+
+/* The final message lives inside the transcript, so it must sit in the flex flow
+   like any other bubble rather than carrying the panel's own outer margin. */
+.hw-transcript > .hw-final {
+  align-self: stretch;
+  width: 100%;
+  margin: 0;
+}

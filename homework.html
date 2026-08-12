@@ -116,14 +116,16 @@
 
   <!-- ---------- composer ---------- -->
   <div class="hw-composer" id="hw-composer" hidden>
-    <textarea id="hw-input" rows="1" placeholder="Type what you did…"
+    <textarea id="hw-input" rows="1" placeholder="Describe a task or ask a question"
               autocomplete="off" autocapitalize="sentences"></textarea>
     <button id="hw-mic" class="hw-iconbtn" title="Hold to speak (English)" hidden>🎙</button>
     <button id="hw-call" class="hw-iconbtn" title="Call your teacher">📞</button>
     <button id="hw-send" class="hw-iconbtn hw-primary" title="Send">↑</button>
   </div>
 
-  <!-- ---------- final ---------- -->
+  <!-- ---------- final ----------
+       Lives here in the markup, but showFinal() moves it into #hw-transcript so
+       it lands at the end of the conversation instead of below the composer. -->
   <section id="hw-final" class="hw-panel hw-final" hidden>
     <h2>Your message <span class="hw-count" id="hw-final-count"></span></h2>
     <textarea id="hw-message" rows="12" spellcheck="false"></textarea>
