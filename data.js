@@ -942,6 +942,158 @@ const lessonIntroductions = [
   { front: "나는 스웨덴 사람이야.", back: "naneun seuweden saramiya", extra: "I am Swedish. (casual/informal speech)" },
 ];
 
+// ---------- Lesson recap: Body ----------
+
+const lessonBody = [
+  { front: "눈", back: "nun", extra: "eyes" },
+  { front: "코", back: "ko", extra: "nose" },
+  { front: "입", back: "ip", extra: "mouth" },
+  { front: "귀", back: "gwi", extra: "ears" },
+  { front: "머리", back: "meori", extra: "head" },
+  { front: "머리카락", back: "meorikarak", extra: "hair" },
+  { front: "수염", back: "suyeom", extra: "beard" },
+  { front: "눈썹", back: "nunsseop", extra: "eyebrows" },
+  { front: "쌍꺼풀", back: "ssangkkeopul", extra: "double eyelid crease" },
+  { front: "입술", back: "ipsul", extra: "lips" },
+  { front: "눈동자", back: "nundongja", extra: "pupil" },
+  { front: "어깨", back: "eokkae", extra: "shoulder" },
+  { front: "팔", back: "pal", extra: "arm" },
+  { front: "손", back: "son", extra: "hand" },
+  { front: "손목", back: "sonmok", extra: "wrist" },
+  { front: "손가락", back: "songarak", extra: "finger" },
+  { front: "손톱", back: "sontop", extra: "fingernails" },
+  { front: "다리", back: "dari", extra: "leg" },
+  { front: "무릎", back: "mureup", extra: "knee" },
+  { front: "발", back: "bal", extra: "foot" },
+  { front: "발목", back: "balmok", extra: "ankle" },
+  { front: "발가락", back: "balgarak", extra: "toe" },
+  { front: "발톱", back: "baltop", extra: "toenails" },
+  { front: "배꼽", back: "baekkop", extra: "belly button" },
+  { front: "엉덩이", back: "eongdeongi", extra: "bum" },
+  { front: "몸", back: "mom", extra: "body" },
+  { front: "털", back: "teol", extra: "body hair" },
+  { front: "수술", back: "susul", extra: "surgery" },
+  { front: "똥", back: "ttong", extra: "poo" },
+  { front: "오줌", back: "ojum", extra: "pee" },
+  { front: "쉬", back: "swi", extra: "pee (casual)" },
+];
+
+// ---------- Lesson recap: Family ----------
+
+const lessonFamily = [
+  { front: "가족", back: "gajok", extra: "family" },
+  { front: "어머니", back: "eomeoni", extra: "mum" },
+  { front: "아버지", back: "abeoji", extra: "dad" },
+  { front: "누나", back: "nuna", extra: "older sister (used by men)" },
+  { front: "형", back: "hyeong", extra: "older brother (used by men)" },
+  { front: "언니", back: "eonni", extra: "older sister (used by women)" },
+  { front: "오빠", back: "oppa", extra: "older brother (used by women)" },
+  { front: "여동생", back: "yeodongsaeng", extra: "younger sister" },
+  { front: "남동생", back: "namdongsaeng", extra: "younger brother" },
+  { front: "여자", back: "yeoja", extra: "woman" },
+  { front: "남자", back: "namja", extra: "man" },
+  { front: "아기", back: "agi", extra: "baby" },
+  { front: "여보", back: "yeobo", extra: "honey / darling (to a spouse)" },
+];
+
+// ---------- Lesson recap: Days of the week ----------
+
+const lessonDays = [
+  { front: "월요일", back: "woryoil", extra: "Monday" },
+  { front: "화요일", back: "hwayoil", extra: "Tuesday" },
+  { front: "수요일", back: "suyoil", extra: "Wednesday" },
+  { front: "목요일", back: "mogyoil", extra: "Thursday" },
+  { front: "금요일", back: "geumyoil", extra: "Friday" },
+  { front: "토요일", back: "toyoil", extra: "Saturday" },
+  { front: "일요일", back: "iryoil", extra: "Sunday" },
+];
+
+// ---------- Lesson recap: Countries & nationalities ----------
+
+const lessonCountries = [
+  { front: "한국", back: "hanguk", extra: "Korea" },
+  { front: "한국인", back: "hangugin", extra: "Korean (person)" },
+  { front: "영국", back: "yeongguk", extra: "the UK" },
+  { front: "영국인", back: "yeonggugin", extra: "British (person)" },
+  { front: "미국", back: "miguk", extra: "America / USA" },
+  { front: "미국인", back: "migugin", extra: "American (person)" },
+];
+
+// ---------- Lesson recap: Food & drink ----------
+
+const lessonFood = [
+  { front: "밥", back: "bap", extra: "rice / meal" },
+  { front: "국", back: "guk", extra: "soup" },
+  { front: "물", back: "mul", extra: "water" },
+  { front: "물고기", back: "mulgogi", extra: "fish (live animal)" },
+  { front: "고기", back: "gogi", extra: "meat" },
+  { front: "음식", back: "eumsik", extra: "food" },
+  { front: "과일", back: "gwail", extra: "fruit" },
+  { front: "사과", back: "sagwa", extra: "apple" },
+  { front: "배", back: "bae", extra: "pear / stomach (homograph)" },
+  { front: "야채", back: "yachae", extra: "vegetable" },
+  { front: "우유", back: "uyu", extra: "milk" },
+  { front: "차", back: "cha", extra: "tea" },
+  { front: "디저트", back: "dijeoteu", extra: "dessert" },
+  { front: "술", back: "sul", extra: "alcohol / drinks" },
+  { front: "맥주", back: "maekju", extra: "beer" },
+  { front: "소주", back: "soju", extra: "soju" },
+];
+
+// ---------- Lesson recap: Nature ----------
+
+const lessonNature = [
+  { front: "꽃", back: "kkot", extra: "flower" },
+  { front: "나무", back: "namu", extra: "tree" },
+  { front: "산", back: "san", extra: "mountain" },
+  { front: "바다", back: "bada", extra: "sea" },
+  { front: "해", back: "hae", extra: "sun" },
+  { front: "눈", back: "nun", extra: "snow (homograph with 눈=eye)" },
+  { front: "구름", back: "gureum", extra: "cloud" },
+  { front: "날씨", back: "nalssi", extra: "weather" },
+  { front: "비둘기", back: "bidulgi", extra: "pigeon" },
+];
+
+// ---------- Lesson recap: Everyday objects & places ----------
+
+const lessonObjects = [
+  { front: "자동차", back: "jadongcha", extra: "car" },
+  { front: "노트북", back: "noteubuk", extra: "laptop" },
+  { front: "핸드폰", back: "haendeupon", extra: "mobile phone" },
+  { front: "옷", back: "ot", extra: "clothes" },
+  { front: "반지", back: "banji", extra: "ring" },
+  { front: "가방", back: "gabang", extra: "bag" },
+  { front: "연필", back: "yeonpil", extra: "pencil" },
+  { front: "필통", back: "piltong", extra: "pencil case" },
+  { front: "숟가락", back: "sutgarak", extra: "spoon" },
+  { front: "젓가락", back: "jeotgarak", extra: "chopsticks" },
+  { front: "쓰레기", back: "sseuregi", extra: "rubbish" },
+  { front: "쓰레기통", back: "sseuregitong", extra: "bin" },
+  { front: "영화", back: "yeonghwa", extra: "film / movie" },
+  { front: "영화관", back: "yeonghwagwan", extra: "cinema" },
+  { front: "엘리베이터", back: "ellibeiteo", extra: "lift / elevator" },
+  { front: "여행", back: "yeohaeng", extra: "trip / travel" },
+  { front: "학생", back: "haksaeng", extra: "student" },
+  { front: "선생님", back: "seonsaengnim", extra: "teacher (honorific)" },
+  { front: "학교", back: "hakgyo", extra: "school" },
+  { front: "대학교", back: "daehakgyo", extra: "university" },
+  { front: "시간", back: "sigan", extra: "time" },
+  { front: "시간표", back: "siganpyo", extra: "timetable" },
+  { front: "칫솔", back: "chitsol", extra: "toothbrush" },
+  { front: "치약", back: "chiyak", extra: "toothpaste" },
+  { front: "비누", back: "binu", extra: "soap" },
+  { front: "향수", back: "hyangsu", extra: "perfume" },
+  { front: "화장", back: "hwajang", extra: "make-up" },
+  { front: "화장실", back: "hwajangsil", extra: "toilet / bathroom" },
+  { front: "거울", back: "geoul", extra: "mirror" },
+  { front: "잠", back: "jam", extra: "sleep" },
+  { front: "꿈", back: "kkum", extra: "dream" },
+  { front: "쉬는시간", back: "swineunsigan", extra: "break / break time" },
+  { front: "신호등", back: "sinhodeung", extra: "traffic light" },
+  { front: "전화", back: "jeonhwa", extra: "call / telephone" },
+  { front: "문", back: "mun", extra: "door" },
+];
+
 // ---------- Deck registry ----------
 
 const DECKS = {
@@ -954,5 +1106,12 @@ const DECKS = {
   nativeNumbers:   { label: "Native Korean numbers",       build: () => nativeNumbers },
   arabicSino:      { label: "Arabic → Sino-Korean",        build: () => generateArabicToKorean({ count: 20, min: 1, max: 999, system: "sino" }) },
   arabicNative:    { label: "Arabic → Native Korean",      build: () => generateArabicToKorean({ count: 20, min: 1, max: 99,  system: "native" }) },
-  lessonIntroductions: { label: "Lesson — Introductions",  build: () => lessonIntroductions },
+  lessonIntroductions: { label: "Lesson — Introductions",         build: () => lessonIntroductions },
+  lessonBody:          { label: "Lesson — Body",                  build: () => lessonBody },
+  lessonFamily:        { label: "Lesson — Family",                build: () => lessonFamily },
+  lessonDays:          { label: "Lesson — Days of the week",      build: () => lessonDays },
+  lessonCountries:     { label: "Lesson — Countries",             build: () => lessonCountries },
+  lessonFood:          { label: "Lesson — Food & drink",          build: () => lessonFood },
+  lessonNature:        { label: "Lesson — Nature",                build: () => lessonNature },
+  lessonObjects:       { label: "Lesson — Everyday objects",      build: () => lessonObjects },
 };
