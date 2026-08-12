@@ -1,7 +1,7 @@
 {
-  "name": "Korean Teacher",
-  "short_name": "Korean",
-  "description": "Practice reading Hangul and Korean numbers — flashcards with audio.",
+  "name": "한국어 숙제",
+  "short_name": "한국어",
+  "description": "Korean flashcards and weekly homework practice.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

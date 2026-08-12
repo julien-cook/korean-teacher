@@ -9,20 +9,20 @@
        other host can be contacted from this page, so a script injected here
        could not exfiltrate the key. wss: is listed for the realtime voice API. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://api.x.ai wss://api.x.ai; base-uri 'none'; form-action 'none'; object-src 'none'">
-  <title>Homework · Korean Teacher</title>
+  <title>숙제 · 한국어 숙제</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="homework.css">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Korean">
+  <meta name="apple-mobile-web-app-title" content="한국어">
 </head>
 <body class="hw-body">
 
   <header class="hw-top">
     <a class="mini" href="index.html">← Cards</a>
-    <strong class="hw-title">Homework</strong>
+    <strong class="hw-title">숙제</strong>
     <button id="hw-reload" class="mini" title="Reload">↻</button>
     <button id="hw-conn" class="mini hw-conn" hidden>⚙︎ Setup</button>
   </header>
@@ -51,6 +51,27 @@
       anything. Use a <strong>separate key with a spend limit</strong>, and revoke it
       if you stop using this.
     </p>
+
+    <details class="hw-adv">
+      <summary>Your teacher</summary>
+      <p class="hw-note">
+        How she talks and what she's like. This shapes the voice you practise with —
+        edit it to match your real 선생님.
+      </p>
+      <label class="hw-field">Personality
+        <textarea id="hw-persona" rows="7" spellcheck="false"></textarea>
+      </label>
+      <label class="hw-field">Voice
+        <select id="hw-voice">
+          <option value="ara">ara</option>
+          <option value="eve">eve</option>
+          <option value="leo">leo</option>
+          <option value="rex">rex</option>
+          <option value="sal">sal</option>
+        </select>
+      </label>
+      <button id="hw-persona-reset" class="mini" type="button">Reset to default</button>
+    </details>
 
     <details class="hw-adv">
       <summary>Advanced</summary>
@@ -85,11 +106,20 @@
 
   <main class="hw-transcript" id="hw-transcript" aria-live="polite"></main>
 
+  <!-- ---------- live call ---------- -->
+  <div class="hw-callbar" id="hw-callbar" hidden>
+    <span class="hw-orb" id="hw-orb"></span>
+    <span class="hw-callstatus" id="hw-callstatus">Connecting…</span>
+    <button id="hw-mute" class="mini">Mute</button>
+    <button id="hw-hangup" class="mini hw-danger">End call</button>
+  </div>
+
   <!-- ---------- composer ---------- -->
   <div class="hw-composer" id="hw-composer" hidden>
     <textarea id="hw-input" rows="1" placeholder="Type what you did…"
               autocomplete="off" autocapitalize="sentences"></textarea>
-    <button id="hw-mic" class="hw-iconbtn" title="Speak in English" hidden>🎙</button>
+    <button id="hw-mic" class="hw-iconbtn" title="Hold to speak (English)" hidden>🎙</button>
+    <button id="hw-call" class="hw-iconbtn" title="Call your teacher">📞</button>
     <button id="hw-send" class="hw-iconbtn hw-primary" title="Send">↑</button>
   </div>
 

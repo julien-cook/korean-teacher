@@ -2,6 +2,12 @@
    Defines no :root tokens on purpose — it inherits the palette, the dark mode
    and the font stack from styles.css for free. */
 
+/* The browser's default [hidden] rule is `display: none` at UA specificity, so
+   any class here that sets `display` (flex, grid…) silently defeats it and the
+   element stays on screen with .hidden = true. Everything in this file relies
+   on the hidden attribute, so make it win. */
+[hidden] { display: none !important; }
+
 .hw-body {
   display: flex;
   flex-direction: column;
@@ -321,4 +327,70 @@
   font-size: 0.75rem;
   line-height: 1.5;
   color: var(--accent);
+}
+
+/* ---------- live call ---------- */
+
+.hw-callbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 16;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  background: var(--card-bg);
+  border-top: 1px solid var(--card-border);
+}
+
+.hw-callstatus { flex: 1; font-size: 0.85rem; color: var(--muted); }
+
+.hw-danger {
+  color: #fff !important;
+  background: #d32f2f !important;
+  border-color: #d32f2f !important;
+}
+
+.hw-orb {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.hw-orb.connecting { background: #e0a030; animation: hw-pulse 1s ease-in-out infinite; }
+.hw-orb.listening  { background: #2e7d32; }
+.hw-orb.speaking   { background: var(--accent); animation: hw-pulse 0.9s ease-in-out infinite; }
+.hw-orb.muted      { background: var(--muted); opacity: 0.5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hw-orb { animation: none !important; }
+}
+
+/* The teacher-personality box needs room to actually read. */
+.hw-field textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px;
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  resize: vertical;
+}
+
+.hw-field select {
+  display: block;
+  margin-top: 4px;
+  padding: 8px 10px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
 }
