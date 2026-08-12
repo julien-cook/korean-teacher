@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#d64545">
+  <!-- connect-src must list your relay origin. If you deploy the Worker to a
+       different subdomain, edit the https://*.workers.dev entry below. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://api.x.ai https://*.workers.dev; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <title>Homework · Korean Teacher</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="homework.css">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Korean">
+</head>
+<body class="hw-body">
+
+  <header class="hw-top">
+    <a class="mini" href="index.html">← Cards</a>
+    <strong class="hw-title">Homework</strong>
+    <button id="hw-reload" class="mini" title="Reload">↻</button>
+    <button id="hw-conn" class="mini hw-conn" hidden>⚙︎ Setup</button>
+  </header>
+
+  <!-- ---------- setup ---------- -->
+  <section id="hw-setup" class="hw-panel" hidden>
+    <h2>Connect to Grok</h2>
+
+    <div class="hw-tabs" role="tablist">
+      <button class="hw-tab" id="tab-relay" role="tab" aria-selected="true">Via relay (recommended)</button>
+      <button class="hw-tab" id="tab-direct" role="tab" aria-selected="false">Key in browser</button>
+    </div>
+
+    <div id="pane-relay" class="hw-pane">
+      <p class="hw-note">
+        Your xAI key stays on the Worker and never touches this browser. Deploy
+        <code>relay/</code> once (see its README), then paste the two values below.
+      </p>
+      <label class="hw-field">Relay URL
+        <input id="hw-relay-url" type="url" inputmode="url" autocomplete="off"
+               placeholder="https://korean-teacher-relay.you.workers.dev">
+      </label>
+      <label class="hw-field">Relay token
+        <input id="hw-relay-token" type="password" autocomplete="off" placeholder="the RELAY_TOKEN you set">
+      </label>
+    </div>
+
+    <div id="pane-direct" class="hw-pane" hidden>
+      <p class="hw-warn">
+        <strong>Read this before pasting a key.</strong> It is stored in this browser's
+        localStorage. Any script that runs on this site can read it, as can anyone with
+        access to this device or its backups. An xAI key is account-wide: whoever has it
+        can spend your credit on anything until you revoke it. Speech may work this way,
+        but chat is normally blocked by the browser, so you will probably still need the
+        relay. If you use this mode, make a <em>separate</em> key with a spend limit and
+        revoke it when you stop using this app.
+      </p>
+      <label class="hw-field">xAI API key
+        <input id="hw-key" type="password" autocomplete="off" placeholder="xai-…">
+      </label>
+    </div>
+
+    <details class="hw-adv">
+      <summary>Advanced</summary>
+      <label class="hw-field">Model
+        <input id="hw-model" type="text" autocomplete="off" placeholder="grok-4.5">
+      </label>
+      <label class="hw-field">API base (direct mode only)
+        <input id="hw-base" type="url" inputmode="url" autocomplete="off" placeholder="https://api.x.ai">
+      </label>
+    </details>
+
+    <label class="hw-check">
+      <input type="checkbox" id="hw-remember" checked> Remember on this device
+    </label>
+
+    <div class="hw-actions">
+      <button id="hw-save" class="mini hw-primary">Save &amp; test</button>
+      <button id="hw-clear" class="mini">Clear</button>
+    </div>
+    <p id="hw-probe" class="hw-probe" role="status" aria-live="polite"></p>
+  </section>
+
+  <!-- ---------- task ---------- -->
+  <section id="hw-task" class="hw-taskbar" hidden>
+    <div class="hw-prompt">
+      <div class="hw-prompt-ko" id="hw-prompt-ko"></div>
+      <div class="hw-prompt-en" id="hw-prompt-en"></div>
+    </div>
+    <div class="hw-chips" id="hw-chips" role="group" aria-label="Days"></div>
+    <div class="hw-weekline">
+      <span id="hw-weeklabel"></span>
+      <button id="hw-weekswitch" class="hw-link" type="button">last week ⇄</button>
+      <span class="hw-count" id="hw-count"></span>
+    </div>
+    <p id="hw-notice" class="hw-notice" hidden></p>
+  </section>
+
+  <main class="hw-transcript" id="hw-transcript" aria-live="polite"></main>
+
+  <!-- ---------- composer ---------- -->
+  <div class="hw-composer" id="hw-composer" hidden>
+    <textarea id="hw-input" rows="1" placeholder="Type what you did…"
+              autocomplete="off" autocapitalize="sentences"></textarea>
+    <button id="hw-mic" class="hw-iconbtn" title="Speak in English" hidden>🎙</button>
+    <button id="hw-send" class="hw-iconbtn hw-primary" title="Send">↑</button>
+  </div>
+
+  <!-- ---------- final ---------- -->
+  <section id="hw-final" class="hw-panel hw-final" hidden>
+    <h2>Your message <span class="hw-count" id="hw-final-count"></span></h2>
+    <textarea id="hw-message" rows="12" spellcheck="false"></textarea>
+    <div class="hw-finalopts">
+      <label class="hw-check"><input type="checkbox" id="hw-envelope" checked> Greeting &amp; sign-off</label>
+      <label class="hw-check"><input type="checkbox" id="hw-english" checked> Include English</label>
+    </div>
+    <div class="hw-actions">
+      <button id="hw-copy" class="mini hw-primary">Copy</button>
+      <button id="hw-share" class="mini">Share</button>
+      <button id="hw-playall" class="mini">🔊 Play all</button>
+      <button id="hw-restart" class="mini">Start a new week</button>
+    </div>
+    <p id="hw-final-status" class="hw-probe" role="status" aria-live="polite"></p>
+  </section>
+
+  <audio id="hw-audio" playsinline></audio>
+
+  <script src="data.js"></script>
+  <script src="homework-data.js"></script>
+  <script src="homework.js"></script>
+</body>
+</html>
