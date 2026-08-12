@@ -17,6 +17,13 @@ const $ = (id) => document.getElementById(id);
 const el = {
   conn: $("hw-conn"),
   reload: $("hw-reload"),
+  logBtn: $("hw-logbtn"),
+  logPanel: $("hw-logpanel"),
+  logBody: $("hw-logbody"),
+  logCopy: $("hw-logcopy"),
+  logClear: $("hw-logclear"),
+  logClose: $("hw-logclose"),
+  logStatus: $("hw-logstatus"),
   setup: $("hw-setup"),
   key: $("hw-key"),
   model: $("hw-model"),
@@ -777,6 +784,15 @@ async function send(userText, opts) {
 
 function acceptSentence(day, opts) {
   const fromCall = opts && opts.fromCall;
+
+  // Independent of the call_id guard: the same Korean sentence is never wanted
+  // twice in one homework message, whatever route it arrived by.
+  const already = state.sentences.some((s) => s.ko.trim() === String(day.ko).trim());
+  if (already) {
+    logEvent("save", "duplicate sentence ignored: " + day.ko);
+    return false;
+  }
+
   state.sentences.push({
     day: day.day || "",
     ko: day.ko,
@@ -785,6 +801,7 @@ function acceptSentence(day, opts) {
   });
   renderProgress();
   saveDraft();
+  logEvent("save", (day.day || "?") + " | " + day.ko);
 
   const p = progress();
 
@@ -793,7 +810,7 @@ function acceptSentence(day, opts) {
   if (fromCall) {
     renderDayCard(day, { accepted: true });
     if (p.done) showFinal();
-    return;
+    return true;
   }
 
   renderBlankCheck(day.ko, () => {
@@ -806,6 +823,7 @@ function acceptSentence(day, opts) {
     // control line. The app only nudges the conversation along.
     send("Added. What next?", { silent: true });
   });
+  return true;
 }
 
 function startConversation() {
@@ -1100,6 +1118,55 @@ if (window.visualViewport) {
 }
 
 
+// ---------- event log ----------
+//
+// A call is the one part of this app that is impossible to debug after the fact
+// from the UI alone: the interesting events arrive over a socket and vanish.
+// This keeps the last few hundred, survives a reload, and can be copied out.
+
+const HW_LOG_KEY = "korean-teacher:hw-log:v1";
+const LOG_MAX = 400;
+let logBuf = [];
+let logFlush = null;
+
+function logEvent(kind, msg) {
+  const stamp = new Date().toISOString().slice(11, 23);
+  logBuf.push({ t: stamp, k: kind, m: String(msg).slice(0, 400) });
+  if (logBuf.length > LOG_MAX) logBuf.splice(0, logBuf.length - LOG_MAX);
+  if (el.logBody && !el.logPanel.hidden) renderLog();
+  // Throttled, because a call emits events continuously and localStorage is sync.
+  if (!logFlush) {
+    logFlush = setTimeout(() => {
+      logFlush = null;
+      try { localStorage.setItem(HW_LOG_KEY, JSON.stringify(logBuf.slice(-LOG_MAX))); } catch (_) {}
+    }, 2000);
+  }
+}
+
+function loadLog() {
+  try {
+    const raw = localStorage.getItem(HW_LOG_KEY);
+    if (raw) logBuf = JSON.parse(raw) || [];
+  } catch (_) { logBuf = []; }
+}
+
+function logText() {
+  const head = [
+    "한국어 숙제 — event log",
+    "when: " + new Date().toISOString(),
+    "agent: " + navigator.userAgent,
+    "model: " + (cfg.model || DEFAULT_MODEL) + " | voice: " + (cfg.voice || "ara"),
+    "sentences: " + state.sentences.length,
+    "-".repeat(60),
+  ].join("\n");
+  return head + "\n" + logBuf.map((e) => `${e.t} [${e.k}] ${e.m}`).join("\n");
+}
+
+function renderLog() {
+  el.logBody.textContent = logBuf.map((e) => `${e.t} [${e.k}] ${e.m}`).join("\n");
+  el.logBody.scrollTop = el.logBody.scrollHeight;
+}
+
 // ---------- live call (xAI realtime speech-to-speech) ----------
 //
 // The browser opens wss://api.x.ai/v1/realtime directly. WebSocket handshakes are
@@ -1140,6 +1207,10 @@ const call = {
   active: false, ready: false, configSent: false, muted: false,
   playQueue: [], playhead: 0, gen: 0,
   userBubble: null, botBubble: null,
+  // The realtime API announces one finished tool call TWICE — once as
+  // response.function_call_arguments.done and again inside
+  // response.output_item.done. Without this set, every sentence is saved twice.
+  handledCalls: new Set(),
 };
 
 function callSend(o) {
@@ -1265,16 +1336,28 @@ function sessionUpdate() {
 }
 
 function onCallTool(name, callId, argsStr) {
+  if (!callId || call.handledCalls.has(callId)) {
+    logEvent("tool", "duplicate ignored: " + name + " " + callId);
+    return;
+  }
+  call.handledCalls.add(callId);
+  logEvent("tool", name + " " + String(argsStr).slice(0, 160));
+
   let out = { ok: false };
   if (name === "save_sentence") {
     try {
       const a = JSON.parse(argsStr || "{}");
       if (a.ko) {
-        acceptSentence({ day: a.day || "", ko: a.ko, rr: a.rr || "", en: a.en || "" }, { fromCall: true });
-        out = { ok: true, saved: a.ko, total: state.sentences.length, remaining: Math.max(0, task.target - state.sentences.length) };
+        const added = acceptSentence({ day: a.day || "", ko: a.ko, rr: a.rr || "", en: a.en || "" }, { fromCall: true });
+        out = added
+          ? { ok: true, saved: a.ko }
+          : { ok: false, reason: "already saved — do not save this sentence again" };
+        out.total = state.sentences.length;
+        out.remaining = Math.max(0, task.target - state.sentences.length);
       }
     } catch (_) { out = { ok: false, error: "bad arguments" }; }
   }
+  logEvent("tool", "-> " + JSON.stringify(out));
   callSend({ type: "conversation.item.create", item: { type: "function_call_output", call_id: callId, output: JSON.stringify(out) } });
   callSend({ type: "response.create" });
 }
@@ -1295,6 +1378,7 @@ function handleCallEvent(msg) {
       }
       break;
     case "error":
+      logEvent("err", JSON.stringify(msg.error || msg).slice(0, 300));
       addBubble("bot", "Call error: " + JSON.stringify(msg.error || msg).slice(0, 200)).classList.add("err");
       break;
     case "input_audio_buffer.speech_started":
@@ -1340,11 +1424,20 @@ function connectCall(which) {
     return;
   }
   call.ws = ws;
-  ws.onopen = () => { opened = true; setCallStatus("Connected, setting up…", "connecting"); };
+  ws.onopen = () => {
+    opened = true;
+    logEvent("call", "socket open via subprotocol form " + (which + 1));
+    setCallStatus("Connected, setting up…", "connecting");
+  };
   ws.onmessage = (e) => {
-    try { handleCallEvent(JSON.parse(e.data)); } catch (_) { /* non-JSON frame */ }
+    let m;
+    try { m = JSON.parse(e.data); } catch (_) { return; }   // non-JSON frame
+    // Audio deltas arrive continuously; logging each would drown everything else.
+    if (m.type && m.type !== "response.output_audio.delta") logEvent("ws", m.type);
+    handleCallEvent(m);
   };
   ws.onclose = (e) => {
+    logEvent("call", "socket closed code=" + e.code + " opened=" + opened + " form=" + (which + 1));
     if (call.ws !== ws) return;                 // superseded by a newer attempt
     if (!opened && which + 1 < CALL_PROTOS.length) {
       setCallStatus("Retrying…", "connecting");
@@ -1367,6 +1460,7 @@ function connectCall(which) {
 async function startCall() {
   if (call.active) return;
   if (!cfg.key) { showSetup(true); return; }
+  logEvent("call", "starting");
   call.gen++;
   const gen = call.gen;
 
@@ -1395,12 +1489,14 @@ async function startCall() {
   call.ready = false;
   call.configSent = false;
   call.muted = false;
+  call.handledCalls.clear();
   el.mute.textContent = "Mute";
   wireCallMic();
   connectCall(0);
 }
 
 function endCall(message) {
+  logEvent("call", "ending" + (message ? ": " + message.slice(0, 120) : ""));
   call.gen++;
   const wasActive = call.active;
   call.active = false;
@@ -1416,6 +1512,7 @@ function endCall(message) {
   if (call.ctx) { call.ctx.close().catch(() => {}); call.ctx = null; }
   call.userBubble = null;
   call.botBubble = null;
+  call.handledCalls.clear();
   el.callbar.hidden = true;
   el.call.disabled = false;
   if (message) addBubble("bot", message).classList.add("err");
@@ -1430,6 +1527,36 @@ document.addEventListener("visibilitychange", () => {
 // ---------- events ----------
 
 el.reload.addEventListener("click", () => location.reload());
+
+el.logBtn.addEventListener("click", () => {
+  el.logPanel.hidden = !el.logPanel.hidden;
+  if (!el.logPanel.hidden) { renderLog(); el.logPanel.scrollIntoView({ block: "start" }); }
+});
+el.logClose.addEventListener("click", () => { el.logPanel.hidden = true; });
+el.logClear.addEventListener("click", () => {
+  logBuf = [];
+  try { localStorage.removeItem(HW_LOG_KEY); } catch (_) {}
+  renderLog();
+  el.logStatus.textContent = "Cleared.";
+});
+el.logCopy.addEventListener("click", async () => {
+  const text = logText();
+  try {
+    await navigator.clipboard.writeText(text);
+    el.logStatus.textContent = "Copied " + logBuf.length + " events.";
+    el.logStatus.className = "hw-probe ok";
+  } catch (_) {
+    // Clipboard is blocked in some standalone PWA contexts; make it selectable.
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.width = "100%";
+    ta.rows = 10;
+    el.logPanel.appendChild(ta);
+    ta.select();
+    el.logStatus.textContent = "Select the text above and copy manually.";
+    el.logStatus.className = "hw-probe";
+  }
+});
 el.conn.addEventListener("click", () => { fillSetup(); showSetup(true); });
 
 el.save.addEventListener("click", async () => {
@@ -1538,6 +1665,8 @@ function boot() {
 }
 
 loadCfg();
+loadLog();
+logEvent("app", "loaded " + location.pathname);
 if (isConfigured()) {
   showSetup(false);
   boot();
