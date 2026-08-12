@@ -1,0 +1,8 @@
+name = "korean-teacher-relay"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Once the relay is working, lock it to your own site by uncommenting this and
+# redeploying. Until then it accepts any origin.
+# [vars]
+# ALLOWED_ORIGIN = "https://julien-cook.github.io"
