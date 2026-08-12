@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#d64545">
-  <!-- connect-src must list your relay origin. If you deploy the Worker to a
-       different subdomain, edit the https://*.workers.dev entry below. -->
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://api.x.ai https://*.workers.dev; base-uri 'none'; form-action 'none'; object-src 'none'">
+  <!-- The key only ever goes to api.x.ai. connect-src is the enforcement: no
+       other host can be contacted from this page, so a script injected here
+       could not exfiltrate the key. wss: is listed for the realtime voice API. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://api.x.ai wss://api.x.ai; base-uri 'none'; form-action 'none'; object-src 'none'">
   <title>Homework · Korean Teacher</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="homework.css">
@@ -28,59 +29,42 @@
 
   <!-- ---------- setup ---------- -->
   <section id="hw-setup" class="hw-panel" hidden>
-    <h2>Connect to Grok</h2>
+    <h2>Your xAI key</h2>
 
-    <div class="hw-tabs" role="tablist">
-      <button class="hw-tab" id="tab-relay" role="tab" aria-selected="true">Via relay (recommended)</button>
-      <button class="hw-tab" id="tab-direct" role="tab" aria-selected="false">Key in browser</button>
-    </div>
+    <p class="hw-note">
+      Paste your key once. It's saved in this browser only — it is never sent
+      anywhere except to xAI, and it is never part of this site's code.
+    </p>
 
-    <div id="pane-relay" class="hw-pane">
-      <p class="hw-note">
-        Your xAI key stays on the Worker and never touches this browser. Deploy
-        <code>relay/</code> once (see its README), then paste the two values below.
-      </p>
-      <label class="hw-field">Relay URL
-        <input id="hw-relay-url" type="url" inputmode="url" autocomplete="off"
-               placeholder="https://korean-teacher-relay.you.workers.dev">
-      </label>
-      <label class="hw-field">Relay token
-        <input id="hw-relay-token" type="password" autocomplete="off" placeholder="the RELAY_TOKEN you set">
-      </label>
-    </div>
+    <label class="hw-field">xAI API key
+      <input id="hw-key" type="password" inputmode="text" autocomplete="off"
+             autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="xai-…">
+    </label>
 
-    <div id="pane-direct" class="hw-pane" hidden>
-      <p class="hw-warn">
-        <strong>Read this before pasting a key.</strong> It is stored in this browser's
-        localStorage. Any script that runs on this site can read it, as can anyone with
-        access to this device or its backups. An xAI key is account-wide: whoever has it
-        can spend your credit on anything until you revoke it. Speech may work this way,
-        but chat is normally blocked by the browser, so you will probably still need the
-        relay. If you use this mode, make a <em>separate</em> key with a spend limit and
-        revoke it when you stop using this app.
-      </p>
-      <label class="hw-field">xAI API key
-        <input id="hw-key" type="password" autocomplete="off" placeholder="xai-…">
-      </label>
-    </div>
+    <label class="hw-check">
+      <input type="checkbox" id="hw-remember" checked> Stay signed in on this device
+    </label>
+
+    <p class="hw-warn">
+      Anyone who can run scripts on this site, or who has this device or its
+      backups, can read a stored key — and an xAI key can spend your credit on
+      anything. Use a <strong>separate key with a spend limit</strong>, and revoke it
+      if you stop using this.
+    </p>
 
     <details class="hw-adv">
       <summary>Advanced</summary>
       <label class="hw-field">Model
         <input id="hw-model" type="text" autocomplete="off" placeholder="grok-4.5">
       </label>
-      <label class="hw-field">API base (direct mode only)
+      <label class="hw-field">API base
         <input id="hw-base" type="url" inputmode="url" autocomplete="off" placeholder="https://api.x.ai">
       </label>
     </details>
 
-    <label class="hw-check">
-      <input type="checkbox" id="hw-remember" checked> Remember on this device
-    </label>
-
     <div class="hw-actions">
-      <button id="hw-save" class="mini hw-primary">Save &amp; test</button>
-      <button id="hw-clear" class="mini">Clear</button>
+      <button id="hw-save" class="mini hw-primary">Save &amp; start</button>
+      <button id="hw-clear" class="mini">Clear key</button>
     </div>
     <p id="hw-probe" class="hw-probe" role="status" aria-live="polite"></p>
   </section>
@@ -93,8 +77,7 @@
     </div>
     <div class="hw-chips" id="hw-chips" role="group" aria-label="Days"></div>
     <div class="hw-weekline">
-      <span id="hw-weeklabel"></span>
-      <button id="hw-weekswitch" class="hw-link" type="button">last week ⇄</button>
+      <button id="hw-finish" class="hw-link" type="button" hidden>Finish</button>
       <span class="hw-count" id="hw-count"></span>
     </div>
     <p id="hw-notice" class="hw-notice" hidden></p>

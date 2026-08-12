@@ -18,12 +18,6 @@ const el = {
   conn: $("hw-conn"),
   reload: $("hw-reload"),
   setup: $("hw-setup"),
-  tabRelay: $("tab-relay"),
-  tabDirect: $("tab-direct"),
-  paneRelay: $("pane-relay"),
-  paneDirect: $("pane-direct"),
-  relayUrl: $("hw-relay-url"),
-  relayToken: $("hw-relay-token"),
   key: $("hw-key"),
   model: $("hw-model"),
   base: $("hw-base"),
@@ -35,8 +29,7 @@ const el = {
   promptKo: $("hw-prompt-ko"),
   promptEn: $("hw-prompt-en"),
   chips: $("hw-chips"),
-  weekLabel: $("hw-weeklabel"),
-  weekSwitch: $("hw-weekswitch"),
+  finish: $("hw-finish"),
   count: $("hw-count"),
   notice: $("hw-notice"),
   transcript: $("hw-transcript"),
@@ -58,23 +51,19 @@ const el = {
 };
 
 const cfg = {
-  mode: "relay",          // "relay" | "direct"
-  relayUrl: "",
-  relayToken: "",
-  key: "",
+  key: "",                // the user's own xAI key, pasted at startup
   model: DEFAULT_MODEL,
   base: DEFAULT_BASE,
   remember: true,
   sttOk: false,
 };
 
-const task = TASKS.weekDiary;
+const task = TASKS.thisWeek;
 
 const state = {
-  weekOffset: 0,          // 0 = this week, -1 = last week
-  chosen: [],             // slot ids the student picked, in order
-  slotIndex: 0,           // which of `chosen` we are working on
-  results: {},            // slotId -> { day, ko, rr, en }
+  // Sentences accumulate as they are accepted. No slots, no fixed order — the
+  // student just talks and the list fills up.
+  sentences: [],          // [{ day, ko, rr, en }]
   history: [],            // chat messages, excluding the system prompt
   busy: false,
   known: null,
@@ -87,7 +76,7 @@ function loadCfg() {
     const raw = localStorage.getItem(HW_CFG_KEY);
     if (!raw) return;
     const p = JSON.parse(raw);
-    for (const k of ["mode", "relayUrl", "relayToken", "key", "model", "base"]) {
+    for (const k of ["key", "model", "base"]) {
       if (typeof p[k] === "string") cfg[k] = p[k];
     }
     if (typeof p.remember === "boolean") cfg.remember = p.remember;
@@ -104,25 +93,17 @@ function saveCfg() {
 }
 
 function isConfigured() {
-  return cfg.mode === "relay"
-    ? Boolean(cfg.relayUrl && cfg.relayToken)
-    : Boolean(cfg.key);
+  return Boolean(cfg.key);
 }
 
 // ---------- transport ----------
 
-// Returns { url, headers } for a given API path, in whichever mode is active.
+// Returns { url, headers } for a given API path. The key goes straight from
+// this browser to xAI; nothing sits in between.
 function endpoint(path, extraHeaders) {
   const headers = Object.assign({}, extraHeaders || {});
-  let url;
-  if (cfg.mode === "relay") {
-    url = cfg.relayUrl.replace(/\/+$/, "") + path;
-    headers["x-relay-token"] = cfg.relayToken;
-  } else {
-    url = (cfg.base || DEFAULT_BASE).replace(/\/+$/, "") + path;
-    headers["Authorization"] = "Bearer " + cfg.key;
-  }
-  return { url, headers };
+  headers["Authorization"] = "Bearer " + cfg.key;
+  return { url: (cfg.base || DEFAULT_BASE).replace(/\/+$/, "") + path, headers };
 }
 
 // A fetch that fails with a message a human can act on. A bare "TypeError:
@@ -135,12 +116,15 @@ async function apiFetch(path, init, label) {
     res = await fetch(url, Object.assign({}, init, { headers }));
   } catch (err) {
     if (!navigator.onLine) throw new Error("You're offline. Reconnect and try again.");
+    // A bare "Failed to fetch" covers CORS, DNS, offline and airplane mode
+    // identically. Name the likely cause rather than leaving it cryptic.
     throw new Error(
-      `Couldn't reach the ${label || "API"}. This is usually one of: the browser blocked the ` +
-      `request (CORS), the URL is wrong, or the network dropped. ` +
-      (cfg.mode === "direct"
-        ? "Chat is normally blocked in browser-key mode — try the relay."
-        : "Check the relay URL, and that `wrangler deploy` succeeded.")
+      `Couldn't reach xAI for ${label || "that request"}. The browser gave no detail, which ` +
+      `almost always means one of two things:\n\n` +
+      `1. xAI refused a request straight from a web page (a CORS block). If ${label || "this"} ` +
+      `is chat, that is the known limitation — the speech endpoints usually still work.\n` +
+      `2. The network dropped.\n\n` +
+      `Open the browser console for the real error.`
     );
   }
   if (!res.ok) {
@@ -149,17 +133,13 @@ async function apiFetch(path, init, label) {
       const text = await res.clone().text();
       detail = text.slice(0, 400);
     } catch (_) { /* body already consumed or empty */ }
-    if (res.status === 401) {
+    if (res.status === 401 || res.status === 403) {
       throw new Error(
-        cfg.mode === "relay"
-          ? "Relay rejected the token (401). Check RELAY_TOKEN matches what you set with wrangler."
-          : "xAI rejected the key (401). Check the key is current and has credit."
+        `xAI rejected the key (${res.status}). Check it is current, has credit, and — for ` +
+        `speech — that voice is enabled for your team on console.x.ai.`
       );
     }
     if (res.status === 429) throw new Error("Rate limited (429). Wait a moment and try again.");
-    if (res.status === 404 && cfg.mode === "relay") {
-      throw new Error("Relay returned 404. Is the Relay URL right, and does the Worker allow this path?");
-    }
     throw new Error(`${label || "API"} error ${res.status}. ${detail}`);
   }
   return res;
@@ -230,13 +210,22 @@ function descriptiveTable() {
 }
 
 function taskBlock() {
-  const days = state.chosen.map((id) => slotById(id).ko).join(" ");
+  const p = progress();
+  const covered = [...daysCovered()];
   return [
-    "## TASK: Weekly diary",
+    "## TASK: this week's homework",
     `Teacher's prompt: ${task.teacher.ko} ("${task.teacher.en}")`,
-    `Deliverable: ${task.deliverable}`,
-    `Days, in order: ${days}`,
-    `Target shape per day: ${task.shape}`,
+    task.brief,
+    `Progress: ${p.intro}/3 self-introduction, ${p.week}/5 days.`,
+    covered.length
+      ? `Days already covered: ${covered.join(" ")} — do not repeat these.`
+      : "No days covered yet.",
+    `Weekday names: ${WEEKDAYS.map(([ko, en]) => `${ko} ${en}`).join(" · ")}`,
+    `Target shape for a diary sentence: ${task.shape}`,
+    "",
+    "For the self-introduction part he needs: name, nationality, job. He already has",
+    "cards for 저는 ...이에요/예요, 영국사람, UX디자이너, so those sentences should be easy",
+    "wins — do not over-complicate them.",
     "",
     "Verb table for this task (dictionary → past polite → English). These count as KNOWN:",
     verbTable(),
@@ -271,48 +260,63 @@ plain 해요체 past: -았어요 / -었어요 / 했어요.
   romanisation for Hangul.
 - He is writing on a phone and has no Korean keyboard. He will not type Hangul at you.
 
-### What he has ACTUALLY been taught — do not assume more
-- Exactly ONE clause type: A은/는 B이에요/예요, and its negation A이/가 아니에요.
-- He owns the 받침 rule cold. 은/는, 이/가, 이에요/예요 all alternate on it.
-- Yes/no questions by rising intonation only. Question words 어디 언제 뭐 무슨 누구 어떻게 왜.
-- 저/나, 제/내, 저희/우리, the 씨 suffix, contractions 전/난/우린.
+### What he can ALREADY do — this is from real homework he submitted, not guesswork
+Do NOT teach him these. Teaching him what he already does correctly is patronising and
+wastes the reply.
+- **Past polite tense. He has this.** He produced 갔어요, 했어요, 마셨어요, 먹었어요 unaided
+  and all four were correct. Never explain how to form -았어요/-었어요 unless he asks.
+- The clause type A은/는 B이에요/예요 and its negation A이/가 아니에요.
+- The 받침 rule, cold. 은/는, 이/가, 이에요/예요 all alternate on it.
+- 저는 as a sentence topic. He uses it correctly, if repetitively.
+- The object particle — SOMETIMES. He wrote 숙제를 correctly.
+- Time 에 — SOMETIMES. He wrote 일요일에, 월요일에, 목요일에 correctly.
 - ~450 concrete nouns (the lexicon below), the numbers, all seven weekday names.
-- Verbs: he can RECOGNISE about 27 dictionary forms. He has NEVER been shown how to attach
-  an ending to one. He cannot yet produce a sentence containing a verb.
+- 저/나, 제/내, 저희/우리, the 씨 suffix.
 
-Everything else is NEW: past tense, 을/를, subject 이/가, 에, 에서, 도, 하고, 그리고, 그래서,
--고, 안-negation, and [Time][Place][Object][Verb] word order.
-So: every VERB and every PARTICLE in this homework is new to him. The NOUNS are not.
+### His ACTUAL gaps — target these, in this order
+${OBSERVED_ERRORS.map((e) => "- " + e).join("\n")}
+
+The single highest-value corrections are **을/를** and **에서**, because he is inconsistent
+rather than ignorant: he already produces them sometimes, so he needs the rule made
+explicit, not introduced from scratch.
+
+Still genuinely new: 에서, subject 이/가 outside 아니에요, 도, 하고/랑 placement, 그리고,
+그래서, -고, 안-negation.
 
 ## HOW TO TEACH
 Lead with transfer, not with new rules.
 - 을/를 IS the 받침 rule he already mastered for 은/는. Say that. Same for 이/가.
-- 하다 → 했어요 is ONE memorised form. It instantly verbalises nouns he already has cards
-  for — 요리, 여행, 전화 — plus the task words 공부, 일, 청소, 운동.
+- When he drops a particle, do not re-teach the verb — he got the verb right. Point at the
+  one missing particle and move on.
 Teach AT MOST ONE new point per reply, in at most two short lines of English.
-Praise what was already right before correcting anything.
+Praise what was already right before correcting anything — and be specific about it, since
+with this student the verb is usually already correct.
 Never print a grammar table. Never lecture. If he doesn't ask why, don't explain why.
 
 ## CONVERSATION RULES — FOLLOW EXACTLY
-1. ONE DAY AT A TIME, in the order the app gives you. Never draft two days in one reply,
-   even if he describes the whole week at once — acknowledge the rest in half a line
-   ("noted, I'll use that for Wednesday") and finish the day you're on.
-2. Each of his messages begins with a control line like [day: 월요일 · 1 of 5]. That is the
-   app telling you which day you are on. Obey it. Never repeat it back.
-3. Ask exactly ONE question per reply.
+1. This is a CONVERSATION, not a form. He talks about whatever he likes, in any order.
+   There is no day picker and no fixed sequence — YOU work out which day a sentence
+   belongs to from what he says, and you keep track of which days are still missing.
+2. ONE SENTENCE AT A TIME. If he describes three days at once, take the first, draft it,
+   and say in half a line that you'll come back to the rest.
+3. Each of his messages begins with a control line like [3 of 8 done · still needed:
+   self-intro ×1, days ×4]. That is the app telling you where he is. Use it to decide what
+   to ask for next. Never repeat it back to him.
+4. Ask exactly ONE question per reply.
 4. Under 120 words of English per reply. Short, warm, conversational. No headings, no
    bullet walls, no emoji spam.
 5. He writes to you in English and is NOT expected to produce Korean himself — you draft
    it, he approves it. If he does offer Korean, praise what's right first, then fix in one
    line.
-6. If his day is vague ("just worked"), ask ONE concrete follow-up — where? with who? what
-   did you eat? — so the sentence has something in it. Do not interrogate.
+6. If what he says is vague ("just worked"), ask ONE concrete follow-up — where? with who?
+   what did you eat? — so the sentence has something in it. Do not interrogate.
 7. Hangul first, romanisation underneath, never romanisation alone.
 8. The app adds the greeting and sign-off to the final message itself. Do NOT put
-   안녕하세요 or 감사합니다 inside a day's sentence.
+   안녕하세요 or 감사합니다 inside a sentence.
 
 ## THE BLOCK YOU MUST EMIT
-Every drafted day MUST appear in this exact block, exactly ONCE per reply, on its own lines:
+Every drafted sentence MUST appear in this exact block, exactly ONCE per reply, on its own
+lines:
 
 <<<DAY
 day: 월요일
@@ -321,7 +325,8 @@ rr: woryoire hoesaeseo ilhaesseoyo.
 en: On Monday I worked at the office.
 >>>
 
-- \`day\` is the Korean weekday only: 월요일 화요일 수요일 목요일 금요일 토요일 일요일.
+- \`day\` is the Korean weekday if the sentence is about a specific day; otherwise the label
+  \`소개\` for a self-introduction sentence.
 - \`ko\` is exactly what he will send his teacher. One or two sentences, 5-9 words each.
 - \`rr\` is Revised Romanisation OF THE PRONUNCIATION: word-spaced, lower case, no hyphens,
   no diacritics. 월요일에 → woryoire. 밥을 → babeul. 식당에서 → sikdangeseo. 좋았어요 → joasseoyo.
@@ -417,40 +422,34 @@ ready and tell him to hit Copy. The app assembles the greeting, the sentences an
 sign-off for him.`;
 }
 
-// ---------- dates ----------
+// ---------- progress ----------
 
-function mondayOf(offsetWeeks) {
-  const now = new Date();
-  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dow = d.getDay();               // 0 = Sunday
-  const backToMonday = (dow + 6) % 7;
-  d.setDate(d.getDate() - backToMonday + offsetWeeks * 7);
-  return d;
+// A self-introduction sentence is tagged 소개 by the tutor; anything with a
+// weekday name counts towards the five diary sentences.
+function isIntro(s) {
+  return !WEEKDAYS.some(([ko]) => (s.day || "").includes(ko));
 }
 
-function dateForSlot(slot, offsetWeeks) {
-  const monday = mondayOf(offsetWeeks);
-  const delta = slot.dow === 0 ? 6 : slot.dow - 1;   // Monday-first week
-  const d = new Date(monday);
-  d.setDate(monday.getDate() + delta);
-  return d;
+function progress() {
+  const intro = state.sentences.filter(isIntro).length;
+  const week = state.sentences.length - intro;
+  const parts = {};
+  for (const p of task.parts) parts[p.id] = p.target;
+  return {
+    intro, week,
+    introLeft: Math.max(0, parts.intro - intro),
+    weekLeft: Math.max(0, parts.week - week),
+    total: state.sentences.length,
+    done: state.sentences.length >= task.target,
+  };
 }
 
-function isFuture(slot) {
-  const d = dateForSlot(slot, state.weekOffset);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  return d.getTime() > today.getTime();
-}
-
-function slotById(id) {
-  return task.slots.find((s) => s.id === id);
-}
-
-function weekLabel() {
-  const monday = mondayOf(state.weekOffset);
-  const fmt = monday.toLocaleDateString(undefined, { day: "numeric", month: "short" });
-  return (state.weekOffset === 0 ? "week of " : "week of ") + fmt;
+function daysCovered() {
+  const seen = new Set();
+  for (const s of state.sentences) {
+    for (const [ko] of WEEKDAYS) if ((s.day || "").includes(ko)) seen.add(ko);
+  }
+  return seen;
 }
 
 // ---------- rendering ----------
@@ -470,56 +469,39 @@ function addBubble(who, text) {
   return div;
 }
 
-function renderChips() {
+// A read-only progress strip. There is nothing to pick and nothing to configure —
+// it just shows how full the list is.
+function renderProgress() {
+  const p = progress();
   el.chips.textContent = "";
-  for (const slot of task.slots) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "hw-chip";
-    btn.textContent = slot.label.slice(0, 3) + " · " + slot.ko;
-
-    const picked = state.chosen.includes(slot.id);
-    const done = Boolean(state.results[slot.id]);
-    const current = picked && state.chosen[state.slotIndex] === slot.id;
-    const future = isFuture(slot);
-
-    if (done) btn.dataset.state = "done";
-    else if (current) btn.dataset.state = "current";
-    else if (picked) btn.dataset.state = "picked";
-
-    if (future && !picked) {
-      btn.disabled = true;
-      btn.title = "Hasn't happened yet";
-    }
-
-    btn.addEventListener("click", () => onChipClick(slot));
-    el.chips.appendChild(btn);
+  for (const part of task.parts) {
+    const have = part.id === "intro" ? p.intro : p.week;
+    const chip = document.createElement("span");
+    chip.className = "hw-chip";
+    chip.textContent = `${part.label} ${Math.min(have, part.target)}/${part.target}`;
+    if (have >= part.target) chip.dataset.state = "done";
+    el.chips.appendChild(chip);
   }
-  el.weekLabel.textContent = weekLabel();
-  const n = Object.keys(state.results).length;
-  el.count.textContent = `${n} / ${task.pick}`;
+  el.count.textContent = `${p.total} / ${task.target}`;
 
-  // Mid-week, this week cannot supply five days that have actually happened.
-  // Say so, rather than leaving a row of dead chips and no explanation.
-  const selectable = task.slots.filter((s) => !isFuture(s) || state.chosen.includes(s.id)).length;
-  if (state.chosen.length < task.pick && selectable < task.pick) {
-    el.notice.hidden = false;
-    el.notice.textContent =
-      `Only ${selectable} day${selectable === 1 ? " has" : "s have"} happened this week. ` +
-      `Switch to last week for a full ${task.pick}.`;
-  } else {
-    el.notice.hidden = true;
+  const covered = daysCovered();
+  el.notice.hidden = covered.size === 0;
+  if (covered.size) {
+    el.notice.textContent = "Days so far: " + [...covered].join(" · ");
   }
+
+  el.finish.hidden = state.sentences.length === 0;
+  el.finish.textContent = p.done ? "Finish ✓" : `Finish (${p.total})`;
 }
 
-function renderDayCard(day, slotId) {
+function renderDayCard(day, opts) {
+  const accepted = opts && opts.accepted;
   const card = document.createElement("div");
   card.className = "day-card";
 
   const dayLine = document.createElement("div");
   dayLine.className = "dc-day";
-  const slot = slotById(slotId);
-  dayLine.textContent = day.day || (slot ? slot.ko : "");
+  dayLine.textContent = day.day || "";
   card.appendChild(dayLine);
 
   const ko = document.createElement("div");
@@ -565,21 +547,30 @@ function renderDayCard(day, slotId) {
   speak.addEventListener("click", () => speakKo(day.ko));
   actions.appendChild(speak);
 
-  const use = document.createElement("button");
-  use.className = "mini hw-primary";
-  use.textContent = "Use this";
-  use.addEventListener("click", () => acceptDay(slotId, day));
-  actions.appendChild(use);
+  if (!accepted) {
+    const use = document.createElement("button");
+    use.className = "mini hw-primary";
+    use.textContent = "Use this";
+    use.addEventListener("click", () => {
+      acceptSentence(day);
+      use.disabled = true;
+      use.textContent = "Added ✓";
+      for (const b of actions.querySelectorAll("button")) {
+        if (b !== use && b.textContent !== "\u{1F50A}") b.remove();
+      }
+    });
+    actions.appendChild(use);
 
-  for (const [label, msg] of [
-    ["Simpler", "That's a bit much — can you make it simpler?"],
-    ["Level up", "Can you level that sentence up one notch?"],
-  ]) {
-    const b = document.createElement("button");
-    b.className = "mini";
-    b.textContent = label;
-    b.addEventListener("click", () => send(msg));
-    actions.appendChild(b);
+    for (const [label, msg] of [
+      ["Simpler", "That's a bit much — can you make it simpler?"],
+      ["Level up", "Can you level that sentence up one notch?"],
+    ]) {
+      const b = document.createElement("button");
+      b.className = "mini";
+      b.textContent = label;
+      b.addEventListener("click", () => send(msg));
+      actions.appendChild(b);
+    }
   }
 
   card.appendChild(actions);
@@ -710,10 +701,13 @@ document.addEventListener("visibilitychange", () => {
 // ---------- conversation ----------
 
 function controlLine() {
-  const slotId = state.chosen[state.slotIndex];
-  const slot = slotById(slotId);
-  if (!slot) return "";
-  return `[day: ${slot.ko} · ${state.slotIndex + 1} of ${state.chosen.length}]\n`;
+  const p = progress();
+  const bits = [`${p.total} of ${task.target} done`];
+  const need = [];
+  if (p.introLeft) need.push(`self-intro x${p.introLeft}`);
+  if (p.weekLeft) need.push(`days x${p.weekLeft}`);
+  bits.push(need.length ? "still needed: " + need.join(", ") : "all done, wrap up");
+  return `[${bits.join(" \u00b7 ")}]\n`;
 }
 
 async function send(userText, opts) {
@@ -759,64 +753,43 @@ async function send(userText, opts) {
   const { prose, day } = parseDay(acc);
   bot.textContent = prose;
   if (!prose) bot.remove();
-  if (day) renderDayCard(day, state.chosen[state.slotIndex]);
+  if (day) renderDayCard(day);
 
   saveDraft();
   state.busy = false;
   el.send.disabled = false;
 }
 
-function acceptDay(slotId, day) {
-  state.results[slotId] = {
-    day: day.day || (slotById(slotId) || {}).ko,
+function acceptSentence(day) {
+  state.sentences.push({
+    day: day.day || "",
     ko: day.ko,
     rr: day.rr || "",
     en: day.en || "",
-  };
-  renderChips();
+  });
+  renderProgress();
   saveDraft();
 
+  const p = progress();
   renderBlankCheck(day.ko, () => {
-    const remaining = state.chosen.findIndex((id) => !state.results[id]);
-    if (remaining === -1) {
+    if (p.done) {
+      addBubble("bot", "That's all eight. Hit Finish when you're ready and I'll put the message together.");
       showFinal();
       return;
     }
-    state.slotIndex = remaining;
-    renderChips();
-    const slot = slotById(state.chosen[state.slotIndex]);
-    addBubble("bot", `Nice. Next: ${slot.label} (${slot.ko}). What did you do?`);
-    el.input.focus();
+    // No scripted next-step: the tutor decides what to ask for, from the
+    // control line. The app only nudges the conversation along.
+    send("Added. What next?", { silent: true });
   });
-}
-
-function onChipClick(slot) {
-  // Before five are chosen, tapping picks days.
-  if (state.chosen.length < task.pick && !state.chosen.includes(slot.id)) {
-    if (isFuture(slot)) return;
-    state.chosen.push(slot.id);
-    state.chosen.sort((a, b) => task.slots.findIndex((s) => s.id === a) - task.slots.findIndex((s) => s.id === b));
-    renderChips();
-    if (state.chosen.length === task.pick) startConversation();
-    return;
-  }
-  // Afterwards, tapping a chosen day jumps back to redo it.
-  if (state.chosen.includes(slot.id)) {
-    state.slotIndex = state.chosen.indexOf(slot.id);
-    renderChips();
-    addBubble("bot", `Back to ${slot.label} (${slot.ko}). Tell me again and I'll redraft it.`);
-    el.input.focus();
-  }
 }
 
 function startConversation() {
   el.composer.hidden = false;
-  const slot = slotById(state.chosen[0]);
   addBubble(
     "bot",
-    "Let's write this week's homework. One day at a time — I'll give you the Korean, " +
-    "how to say it, and what it means.\n\n" +
-    `${slot.label} first (${slot.ko}). What did you do? Just tell me in English.`
+    "Tell me about your week and I'll turn it into Korean — one sentence at a time.\n\n" +
+    "We need a short self-introduction and five days. Start wherever you like: " +
+    "just say what you did, in English."
   );
   el.input.focus();
 }
@@ -826,9 +799,10 @@ function startConversation() {
 function buildMessage() {
   const lines = [];
   if (el.envelope.checked) lines.push(...task.greeting, "");
-  for (const id of state.chosen) {
-    const r = state.results[id];
-    if (!r) continue;
+  // Self-introduction sentences first, then the diary, which is how the teacher
+  // asked for it.
+  const ordered = [...state.sentences.filter(isIntro), ...state.sentences.filter((s) => !isIntro(s))];
+  for (const r of ordered) {
     lines.push(r.ko);
     if (el.english.checked && r.en) lines.push(r.en);
     if (el.english.checked) lines.push("");
@@ -839,9 +813,8 @@ function buildMessage() {
 }
 
 function showFinal() {
-  el.composer.hidden = true;
   el.final.hidden = false;
-  el.finalCount.textContent = `${Object.keys(state.results).length} / ${task.pick}`;
+  el.finalCount.textContent = `${state.sentences.length} / ${task.target}`;
   el.message.value = buildMessage();
   el.final.scrollIntoView({ behavior: "smooth", block: "start" });
   saveDraft();
@@ -852,10 +825,7 @@ function showFinal() {
 function saveDraft() {
   try {
     localStorage.setItem(HW_DRAFT_KEY, JSON.stringify({
-      weekOffset: state.weekOffset,
-      chosen: state.chosen,
-      slotIndex: state.slotIndex,
-      results: state.results,
+      sentences: state.sentences,
       history: state.history.slice(-24),
     }));
   } catch (_) { /* quota; a lost draft is survivable */ }
@@ -866,11 +836,8 @@ function loadDraft() {
     const raw = localStorage.getItem(HW_DRAFT_KEY);
     if (!raw) return false;
     const d = JSON.parse(raw);
-    if (!Array.isArray(d.chosen) || !d.chosen.length) return false;
-    state.weekOffset = Number(d.weekOffset) || 0;
-    state.chosen = d.chosen;
-    state.slotIndex = Number(d.slotIndex) || 0;
-    state.results = d.results || {};
+    if (!Array.isArray(d.sentences) || !d.sentences.length) return false;
+    state.sentences = d.sentences;
     state.history = Array.isArray(d.history) ? d.history : [];
     return true;
   } catch (_) { return false; }
@@ -878,14 +845,11 @@ function loadDraft() {
 
 function clearDraft() {
   localStorage.removeItem(HW_DRAFT_KEY);
-  state.chosen = [];
-  state.slotIndex = 0;
-  state.results = {};
+  state.sentences = [];
   state.history = [];
   el.transcript.textContent = "";
   el.final.hidden = true;
-  el.composer.hidden = true;
-  renderChips();
+  renderProgress();
 }
 
 // ---------- setup panel ----------
@@ -895,27 +859,14 @@ function showSetup(show) {
   el.task.hidden = show;
   el.conn.hidden = show;
   if (!show) {
-    const where = cfg.mode === "relay"
-      ? new URL(cfg.relayUrl).host
-      : new URL(cfg.base || DEFAULT_BASE).host;
-    el.conn.textContent = "→ " + where;
+    // Always show where the key is being sent. If this ever reads as anything
+    // other than api.x.ai, something has redirected it.
+    el.conn.textContent = "→ " + new URL(cfg.base || DEFAULT_BASE).host;
     el.conn.hidden = false;
   }
 }
 
-function setMode(mode) {
-  cfg.mode = mode;
-  const relay = mode === "relay";
-  el.tabRelay.setAttribute("aria-selected", String(relay));
-  el.tabDirect.setAttribute("aria-selected", String(!relay));
-  el.paneRelay.hidden = !relay;
-  el.paneDirect.hidden = relay;
-}
-
 function fillSetup() {
-  setMode(cfg.mode);
-  el.relayUrl.value = cfg.relayUrl;
-  el.relayToken.value = cfg.relayToken;
   el.key.value = cfg.key;
   el.model.value = cfg.model || DEFAULT_MODEL;
   el.base.value = cfg.base || DEFAULT_BASE;
@@ -923,8 +874,6 @@ function fillSetup() {
 }
 
 function readSetup() {
-  cfg.relayUrl = el.relayUrl.value.trim();
-  cfg.relayToken = el.relayToken.value.trim();
   cfg.key = el.key.value.trim();
   cfg.model = el.model.value.trim() || DEFAULT_MODEL;
   cfg.base = el.base.value.trim() || DEFAULT_BASE;
@@ -939,36 +888,31 @@ function probeMsg(text, cls) {
 async function probeTransport() {
   readSetup();
 
-  if (cfg.mode === "relay") {
-    if (!/^https:\/\//i.test(cfg.relayUrl)) { probeMsg("Relay URL must start with https://", "err"); return false; }
-    if (!cfg.relayToken) { probeMsg("Relay token is required.", "err"); return false; }
-  } else {
-    if (!cfg.key) { probeMsg("Paste a key, or switch to the relay tab.", "err"); return false; }
-    if (!/^https:\/\//i.test(cfg.base)) { probeMsg("API base must start with https://", "err"); return false; }
-  }
+  if (!cfg.key) { probeMsg("Paste your xAI key first.", "err"); return false; }
+  if (!/^https:\/\//i.test(cfg.base)) { probeMsg("API base must start with https://", "err"); return false; }
 
-  probeMsg("Testing chat…");
+  probeMsg("Checking your key…");
   try {
     await chat(
       [{ role: "user", content: "Reply with the single word: ok" }],
       null
     );
   } catch (err) {
-    probeMsg("Chat failed. " + err.message, "err");
+    probeMsg("Couldn't start. " + err.message, "err");
     return false;
   }
 
-  probeMsg("Chat works. Testing speech-to-text…");
+  probeMsg("Key works. Checking the microphone…");
   try {
     const wav = silentWav(0.2);
     const fd = new FormData();
     fd.append("file", wav, "probe.wav");
     await apiFetch("/v1/stt", { method: "POST", body: fd }, "speech-to-text");
     cfg.sttOk = true;
-    probeMsg("Chat and microphone both working.", "ok");
-  } catch (err) {
+    probeMsg("All set — typing and the microphone both work.", "ok");
+  } catch (_) {
     cfg.sttOk = false;
-    probeMsg("Chat works. Microphone unavailable (" + err.message + ") — typing still works.", "ok");
+    probeMsg("All set. The microphone isn't available, so type instead.", "ok");
   }
 
   saveCfg();
@@ -1117,8 +1061,6 @@ if (window.visualViewport) {
 
 // ---------- events ----------
 
-el.tabRelay.addEventListener("click", () => setMode("relay"));
-el.tabDirect.addEventListener("click", () => setMode("direct"));
 el.reload.addEventListener("click", () => location.reload());
 el.conn.addEventListener("click", () => { fillSetup(); showSetup(true); });
 
@@ -1132,11 +1074,10 @@ el.save.addEventListener("click", async () => {
 el.clear.addEventListener("click", () => {
   localStorage.removeItem(HW_CFG_KEY);
   Object.assign(cfg, {
-    mode: "relay", relayUrl: "", relayToken: "", key: "",
-    model: DEFAULT_MODEL, base: DEFAULT_BASE, remember: true, sttOk: false,
+    key: "", model: DEFAULT_MODEL, base: DEFAULT_BASE, remember: true, sttOk: false,
   });
   fillSetup();
-  probeMsg("Cleared.", "ok");
+  probeMsg("Key cleared from this browser.", "ok");
 });
 
 el.send.addEventListener("click", () => {
@@ -1154,9 +1095,9 @@ el.input.addEventListener("keydown", (e) => {
 
 el.mic.addEventListener("click", () => { rec.on ? stopRecording() : startRecording(); });
 
-el.weekSwitch.addEventListener("click", () => {
-  state.weekOffset = state.weekOffset === 0 ? -1 : 0;
-  renderChips();
+el.finish.addEventListener("click", () => {
+  if (!state.sentences.length) return;
+  showFinal();
 });
 
 for (const box of [el.envelope, el.english]) {
@@ -1181,12 +1122,12 @@ el.share.addEventListener("click", async () => {
 });
 
 el.playAll.addEventListener("click", () => {
-  speakSequence(state.chosen.map((id) => state.results[id]).filter(Boolean).map((r) => r.ko));
+  speakSequence(state.sentences.map((r) => r.ko));
 });
 
 el.restart.addEventListener("click", () => {
   clearDraft();
-  addBubble("bot", "Fresh week. Tap five days above to get started.");
+  startConversation();
 });
 
 // ---------- boot ----------
@@ -1194,26 +1135,22 @@ el.restart.addEventListener("click", () => {
 function boot() {
   state.known = buildKnownSet();
   el.promptKo.textContent = task.teacher.ko;
-  el.promptEn.textContent = task.teacher.en;
+  el.promptEn.textContent = task.brief;
   el.mic.hidden = !cfg.sttOk;
+  el.composer.hidden = false;
 
   const resumed = loadDraft();
-  renderChips();
+  renderProgress();
 
   if (resumed) {
-    for (const id of state.chosen) {
-      const r = state.results[id];
-      if (r) renderDayCard(r, id);
-    }
-    if (Object.keys(state.results).length >= task.pick) {
-      showFinal();
-    } else {
-      el.composer.hidden = false;
-      const slot = slotById(state.chosen[state.slotIndex]);
-      addBubble("bot", `Picking up where we left off — ${slot.label} (${slot.ko}). What did you do?`);
-    }
-  } else if (state.chosen.length < task.pick) {
-    addBubble("bot", `Tap ${task.pick} days above, then we'll write one sentence for each.`);
+    for (const r of state.sentences) renderDayCard(r, { accepted: true });
+    const p = progress();
+    addBubble("bot", p.done
+      ? "Everything's here. Hit Finish to assemble the message."
+      : "Picking up where we left off. Keep going — what else did you do?");
+    if (p.done) showFinal();
+  } else {
+    startConversation();
   }
 }
 

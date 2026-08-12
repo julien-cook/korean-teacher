@@ -111,35 +111,49 @@ const HW = {
 };
 
 const TASKS = {
-  weekDiary: {
-    label: "Weekly diary — what I did",
+  thisWeek: {
+    label: "This week — introduce myself + my week",
     teacher: { ko: "이번 주에 무엇을 하셨나요?", en: "What did you do this week?" },
-    deliverable: "5 sentences, one per day, sent to the teacher as a text message.",
-    // All seven offered; the student picks any five.
-    slots: [
-      { id: "mon", label: "Monday", ko: "월요일", dow: 1 },
-      { id: "tue", label: "Tuesday", ko: "화요일", dow: 2 },
-      { id: "wed", label: "Wednesday", ko: "수요일", dow: 3 },
-      { id: "thu", label: "Thursday", ko: "목요일", dow: 4 },
-      { id: "fri", label: "Friday", ko: "금요일", dow: 5 },
-      { id: "sat", label: "Saturday", ko: "토요일", dow: 6 },
-      { id: "sun", label: "Sunday", ko: "일요일", dow: 0 },
+    // No slots and no day picker. The student just talks; sentences accumulate
+    // until the target is reached. The tutor works out which day a sentence
+    // belongs to from what they say.
+    brief:
+      "Two parts. First a short self-introduction (2-3 sentences). Then five " +
+      "sentences about the week, one per day.",
+    target: 8,
+    parts: [
+      { id: "intro", label: "Introducing myself", target: 3 },
+      { id: "week", label: "My week", target: 5 },
     ],
-    pick: 5,
-    dateAware: true,
     shape: "[Day]에 [Place]에서 [Object]을/를 [Verb-past].",
-    greeting: ["안녕하세요, 선생님.", "저는 줄리엔이에요."],
+    greeting: ["안녕하세요, 선생님."],
     signoff: ["감사합니다!"],
     levelUpLadder: [
-      "time-of-day", "그리고", "에서 contrasted with 에",
+      "에서 contrasted with 에", "그리고", "time-of-day",
       "이/가 + a 좋았어요 / 맛있었어요 comment", "-고", "그래서", "도",
-    ],
-    examples: [
-      { plain: "월요일에 학교에 갔어요.", rich: "월요일 아침에 학교에 갔어요. 그리고 한국어를 공부했어요." },
-      { plain: "화요일에 친구를 만났어요.", rich: "화요일 저녁에 친구를 만났어요. 그리고 식당에서 밥을 먹었어요." },
     ],
   },
 };
+
+// Weekday names for the tutor's reference only — there is deliberately no
+// day-picker UI any more.
+const WEEKDAYS = [
+  ["월요일", "Monday"], ["화요일", "Tuesday"], ["수요일", "Wednesday"],
+  ["목요일", "Thursday"], ["금요일", "Friday"], ["토요일", "Saturday"],
+  ["일요일", "Sunday"],
+];
+
+// What this student actually gets wrong, taken from real submitted homework
+// rather than assumed. Drives what the tutor targets.
+const OBSERVED_ERRORS = [
+  "Object particle 을/를 dropped about half the time: 커피 마셨어요, 파스타 먹었어요 (→ 커피를, 파스타를).",
+  "에서 not yet known — uses a bare noun for a location: 식당 파스타 먹었어요 (→ 식당에서).",
+  "Time 에 inconsistent — present on 일요일에/월요일에/목요일에, dropped on 화요일/금요일.",
+  "Noun-noun compound order reversed: 미팅 고객 (→ 고객 미팅).",
+  "씨 written as 시: 로지 시 (→ 로지 씨).",
+  "랑 attached to the day instead of the person: 화요일 랑 로지 (→ 로지 씨랑).",
+  "저는 repeated at the head of every sentence — fine, but it can be dropped after the first.",
+];
 
 // ---------- lexicon ----------
 
