@@ -418,3 +418,10 @@
   border: 1px solid var(--card-border);
   border-radius: 10px;
 }
+
+/* While you are speaking the bubble shows a listening indicator rather than a
+   half-transcribed sentence. */
+.bubble.hw-listening {
+  opacity: 0.6;
+  font-style: italic;
+}
