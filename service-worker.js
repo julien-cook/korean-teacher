@@ -3,7 +3,7 @@
 // Strategy: network-first for code (HTML/JS), cache-first for static ballast.
 // Bump CACHE_VERSION when you change any asset to force re-fetch on next load.
 
-const CACHE_VERSION = "v6";
+const CACHE_VERSION = "v7";
 const CACHE_NAME = `korean-teacher-${CACHE_VERSION}`;
 
 const ASSETS = [

@@ -1250,6 +1250,11 @@ const call = {
   active: false, ready: false, configSent: false, muted: false,
   playQueue: [], playhead: 0, gen: 0, logStart: 0,
   userBubble: null, botBubble: null,
+  // Half-duplex gating. The phone speaker feeds straight back into the phone
+  // mic, so while she is talking we stop sending audio entirely — otherwise the
+  // server VAD hears her own voice and fires a user turn.
+  speaking: false, openMicAt: 0,
+  micSink: null,
   // The realtime API announces one finished tool call TWICE — once as
   // response.function_call_arguments.done and again inside
   // response.output_item.done. Without this set, every sentence is saved twice.
@@ -1286,10 +1291,16 @@ function playDelta(b64) {
   src.start(t);
   call.playhead = t + ab.duration;
   call.playQueue.push(src);
+  call.speaking = true;
   src.onended = () => {
     const i = call.playQueue.indexOf(src);
     if (i >= 0) call.playQueue.splice(i, 1);
     if (!call.playQueue.length && call.active) {
+      call.speaking = false;
+      // Hold the mic shut a moment longer: room reverb and the speaker's own
+      // decay still reach the mic after the last sample has played.
+      call.openMicAt = (performance.now ? performance.now() : Date.now()) + 500;
+      logEvent("audio", "playback drained, mic reopens in 500ms");
       setCallStatus(call.muted ? "Muted" : "Listening…", call.muted ? "muted" : "listening");
     }
   };
@@ -1326,6 +1337,9 @@ function wireCallMic() {
   const target = Math.round(ctx.sampleRate * 0.1);   // ~100 ms per frame
   proc.onaudioprocess = (e) => {
     if (!call.active || !call.ready || call.muted) return;
+    // Do not transmit while she is speaking, or during the reverb tail after.
+    const now = performance.now ? performance.now() : Date.now();
+    if (call.speaking || now < call.openMicAt) { chunks = []; len = 0; return; }
     const d = e.inputBuffer.getChannelData(0);
     chunks.push(new Float32Array(d));
     len += d.length;
@@ -1337,8 +1351,15 @@ function wireCallMic() {
       callSend({ type: "input_audio_buffer.append", audio: f32ToB64(all) });
     }
   };
+  // A ScriptProcessor only runs when connected to something, but connecting it
+  // to ctx.destination wires the microphone into the speaker. Terminate it in a
+  // muted gain node instead.
+  const sink = ctx.createGain();
+  sink.gain.value = 0;
+  sink.connect(ctx.destination);
   call.srcNode.connect(proc);
-  proc.connect(ctx.destination);
+  proc.connect(sink);
+  call.micSink = sink;
   call.micNode = proc;
 }
 
@@ -1362,17 +1383,26 @@ function sessionUpdate() {
       voice: cfg.voice || "ara",
       instructions: systemPrompt() +
         "\n\n## YOU ARE ON A VOICE CALL\n" +
-        "He can hear you, so speak like a person: short turns, no markdown, no bullet " +
-        "points, no reading out punctuation. Never say the words 'day', 'ko', 'rr' or " +
-        "'en' as field names, and never spell out a block format — on a call you save a " +
-        "sentence by CALLING THE save_sentence TOOL, silently, and then just carry on " +
-        "talking. Say the Korean sentence out loud clearly and slowly once, then ask if " +
-        "he is happy with it.",
+        "KEEP EVERY TURN UNDER 15 SECONDS. Two or three sentences, then stop and let " +
+        "him speak. Long monologues are unusable on a call — if you have more to say, " +
+        "say the most useful part and wait.\n" +
+        "Speak like a person: no markdown, no bullet points, no reading out punctuation, " +
+        "no spelling things out. Never say the words 'day', 'ko', 'rr' or 'en' as field " +
+        "names, and never describe a block format — on a call you save a sentence by " +
+        "CALLING THE save_sentence TOOL silently, then just carry on talking.\n" +
+        "Say each Korean sentence out loud once, clearly and slowly, then ask if he is " +
+        "happy with it. Do not repeat a sentence you have already saved.",
       audio: {
         input: { format: { type: "audio/pcm", rate: call.ctx.sampleRate }, transcription: {} },
         output: { format: { type: "audio/pcm", rate: call.ctx.sampleRate } },
       },
-      turn_detection: { type: "server_vad", threshold: 0.8, silence_duration_ms: 600, prefix_padding_ms: 300 },
+      // Higher threshold and a longer silence window: this is a phone on
+      // speaker in a room, not a headset, so the mic picks up far more than
+      // just the speaker's voice.
+      turn_detection: { type: "server_vad", threshold: 0.9, silence_duration_ms: 800, prefix_padding_ms: 300 },
+      // No reasoning pass. On a call, latency matters more than depth, and the
+      // task is small enough not to need it.
+      reasoning: { effort: "none" },
       tools: CALL_TOOLS,
     },
   };
@@ -1424,11 +1454,20 @@ function handleCallEvent(msg) {
       logEvent("err", JSON.stringify(msg.error || msg).slice(0, 300));
       addBubble("bot", "Call error: " + JSON.stringify(msg.error || msg).slice(0, 200)).classList.add("err");
       break;
-    case "input_audio_buffer.speech_started":
+    case "input_audio_buffer.speech_started": {
+      // If she is still speaking, this is almost certainly her own voice looping
+      // back through the speaker. Cutting playback here is what made her audio
+      // chop off mid-sentence.
+      const now = performance.now ? performance.now() : Date.now();
+      if (call.speaking || now < call.openMicAt) {
+        logEvent("audio", "ignored speech_started during playback (echo)");
+        break;
+      }
       stopPlayback();
       call.userBubble = null;
       if (call.active) setCallStatus("Listening…", "listening");
       break;
+    }
     case "conversation.item.input_audio_transcription.updated":
       liveUser(msg.transcript || msg.delta || msg.text || "");
       break;
@@ -1552,6 +1591,9 @@ function endCall(message) {
   if (ws) { try { ws.close(); } catch (_) {} }
   if (call.micNode) { try { call.micNode.disconnect(); } catch (_) {} call.micNode = null; }
   if (call.srcNode) { try { call.srcNode.disconnect(); } catch (_) {} call.srcNode = null; }
+  if (call.micSink) { try { call.micSink.disconnect(); } catch (_) {} call.micSink = null; }
+  call.speaking = false;
+  call.openMicAt = 0;
   if (call.stream) { call.stream.getTracks().forEach((t) => t.stop()); call.stream = null; }
   if (call.ctx) { call.ctx.close().catch(() => {}); call.ctx = null; }
   call.userBubble = null;
