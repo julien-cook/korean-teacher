@@ -998,14 +998,37 @@ const lessonFamily = [
 
 // ---------- Lesson recap: Days of the week ----------
 
+// Every weekday is [element] + 요일. The elements are the Chinese five —
+// fire, water, wood, metal, earth — bracketed by moon and sun. Learn the seven
+// element syllables and the whole set falls out, which is why each card carries
+// its element rather than just the English name.
 const lessonDays = [
-  { front: "월요일", back: "woryoil", extra: "Monday" },
-  { front: "화요일", back: "hwayoil", extra: "Tuesday" },
-  { front: "수요일", back: "suyoil", extra: "Wednesday" },
-  { front: "목요일", back: "mogyoil", extra: "Thursday" },
-  { front: "금요일", back: "geumyoil", extra: "Friday" },
-  { front: "토요일", back: "toyoil", extra: "Saturday" },
-  { front: "일요일", back: "iryoil", extra: "Sunday" },
+  { front: "요일", back: "yoil", extra: "day of the week — the ending on all seven" },
+  { front: "월요일", back: "woryoil", extra: "Monday — 🌙 moon day (월 = moon)" },
+  { front: "화요일", back: "hwayoil", extra: "Tuesday — 🔥 fire day (화 = fire)" },
+  { front: "수요일", back: "suyoil", extra: "Wednesday — 💧 water day (수 = water)" },
+  { front: "목요일", back: "mogyoil", extra: "Thursday — 🪵 wood day (목 = wood)" },
+  { front: "금요일", back: "geumyoil", extra: "Friday — 🥇 gold day (금 = gold)" },
+  { front: "토요일", back: "toyoil", extra: "Saturday — 🌍 earth day (토 = earth)" },
+  { front: "일요일", back: "iryoil", extra: "Sunday — ☀️ sun day (일 = sun)" },
+
+  // Talking about days in general
+  { front: "날", back: "nal", extra: "day" },
+  { front: "하루", back: "haru", extra: "one day / a day (a whole day)" },
+  { front: "주", back: "ju", extra: "week" },
+  { front: "주말", back: "jumal", extra: "weekend (주 week + 말 end)" },
+  { front: "평일", back: "pyeongil", extra: "weekday (a normal, non-weekend day)" },
+
+  // Which week
+  { front: "이번 주", back: "ibeon ju", extra: "this week" },
+  { front: "지난주", back: "jinanju", extra: "last week (지난 = passed)" },
+  { front: "다음 주", back: "daeum ju", extra: "next week (다음 = next)" },
+
+  // Which day — none of these take 에
+  { front: "어제", back: "eoje", extra: "yesterday — never takes 에" },
+  { front: "오늘", back: "oneul", extra: "today — never takes 에" },
+  { front: "내일", back: "naeil", extra: "tomorrow — never takes 에" },
+  { front: "매일", back: "maeil", extra: "every day — never takes 에" },
 ];
 
 // ---------- Lesson recap: Countries & nationalities ----------

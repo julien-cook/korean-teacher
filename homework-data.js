@@ -56,11 +56,11 @@ const HW = {
 
   connectives: ["그리고", "그래서", "하고", "도", "많이", "이번", "지난", "다음", "오전", "오후", "안"],
 
-  // Verified against data.js: 요리, 여행, 전화 DO have cards. 공부, 청소, 운동,
-  // 주말, 음악 have none — 일 appears only as the sino numeral "1". These are
-  // licensed for this task but must never be described to the student as words
-  // he already knows.
-  extraNouns: ["공부", "일", "청소", "운동", "주말", "음악"],
+  // Verified against data.js: 요리, 여행, 전화 have cards, and 주말 now does too
+  // (lessonDays). 공부, 청소, 운동, 음악 have none — 일 appears only as the sino
+  // numeral "1". These are licensed for this task but must never be described to
+  // the student as words he already knows.
+  extraNouns: ["공부", "일", "청소", "운동", "음악"],
 
   particles: [
     "에서", "한테", "께서", "하고", "이랑", "까지", "부터", "마다", "처럼",
