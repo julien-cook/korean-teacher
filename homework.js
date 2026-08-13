@@ -1299,6 +1299,9 @@ const call = {
   // server VAD hears her own voice and fires a user turn.
   speaking: false, openMicAt: 0,
   micSink: null,
+  // One utterance at a time. xAI emits transcription.completed after EVERY
+  // chunk, not once at the end, so the bubble reference must survive them all.
+  userText: "", userSettled: false,
   // The realtime API announces one finished tool call TWICE — once as
   // response.function_call_arguments.done and again inside
   // response.output_item.done. Without this set, every sentence is saved twice.
@@ -1408,9 +1411,48 @@ function wireCallMic() {
 }
 
 // --- live transcript into the normal chat ---
-function liveUser(text) {
-  if (!call.userBubble) call.userBubble = addBubble("user", "");
-  call.userBubble.textContent = text;
+//
+// Partial transcripts are NOT rendered. While you are talking the bubble shows a
+// listening indicator; the words appear once, in full, when you stop. Showing
+// every partial produced a staircase of half-sentences.
+
+function startUserTurn() {
+  call.userText = "";
+  call.userSettled = false;
+  if (!call.userBubble) {
+    call.userBubble = addBubble("user", "");
+    call.userBubble.classList.add("hw-listening");
+    // Deliberately not words: this sits in the USER's bubble, so anything
+    // sentence-shaped would read as though they had said it.
+    call.userBubble.textContent = "🎙 · · ·";
+  }
+  scrollDown();
+}
+
+// Called on every partial. Records the text but paints nothing until the turn ends.
+function noteUserText(text) {
+  const t = String(text || "").trim();
+  if (!t) return;
+  call.userText = t;                       // transcripts are cumulative
+  if (call.userSettled && call.userBubble) {
+    // A late chunk after the turn ended — refine in place, never a new bubble.
+    call.userBubble.textContent = t;
+    scrollDown();
+  }
+}
+
+function finishUserTurn() {
+  if (!call.userBubble) return;
+  call.userSettled = true;
+  if (call.userText) {
+    call.userBubble.classList.remove("hw-listening");
+    call.userBubble.textContent = call.userText;
+  } else {
+    // Nothing was transcribed — usually a cough or a stray noise. Drop it
+    // rather than leaving an empty bubble behind.
+    call.userBubble.remove();
+    call.userBubble = null;
+  }
   scrollDown();
 }
 
@@ -1512,16 +1554,20 @@ function handleCallEvent(msg) {
         break;
       }
       stopPlayback();
-      call.userBubble = null;
+      call.userBubble = null;                // previous turn is finished with
+      startUserTurn();
       if (call.active) setCallStatus("Listening…", "listening");
       break;
     }
+    // Both of these fire repeatedly through one utterance. Record, do not paint.
     case "conversation.item.input_audio_transcription.updated":
-      liveUser(msg.transcript || msg.delta || msg.text || "");
-      break;
     case "conversation.item.input_audio_transcription.completed":
-      if (msg.transcript || msg.text) liveUser(msg.transcript || msg.text);
-      call.userBubble = null;
+      noteUserText(msg.transcript || msg.text || msg.delta);
+      break;
+    // The turn is over — now show what was actually said, once.
+    case "input_audio_buffer.speech_stopped":
+    case "input_audio_buffer.committed":
+      finishUserTurn();
       break;
     case "response.created":
       call.botBubble = null;
@@ -1644,8 +1690,11 @@ function endCall(message) {
   call.openMicAt = 0;
   if (call.stream) { call.stream.getTracks().forEach((t) => t.stop()); call.stream = null; }
   if (call.ctx) { call.ctx.close().catch(() => {}); call.ctx = null; }
+  if (call.userBubble && !call.userSettled) call.userBubble.remove();
   call.userBubble = null;
   call.botBubble = null;
+  call.userText = "";
+  call.userSettled = false;
   call.handledCalls.clear();
   el.callbar.hidden = true;
   el.call.disabled = false;
